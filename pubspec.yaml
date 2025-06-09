@@ -27,13 +27,10 @@ dependencies:
   permission_handler: ^11.3.0 # <--- ADICIONADO: Solicitar permissões (opcional, mas bom para storage)
   package_info_plus: ^8.0.0 # Verifique a última versão no pub.dev
   http: ^1.2.1 # Verifique a última versão no pub.dev
-  path_provider: ^2.0.0 # Verifique a última versão
   open_filex: ^4.0.0 # Verifique a última versão
-  permission_handler: ^11.0.0 # Verifique a última versão
-  # --- Ícones Padrão ---
+    # --- Ícones Padrão ---
   cupertino_icons: ^1.0.8 # Ícones estilo iOS
   uuid: ^4.3.3
-  http: ^1.1.0 # Ou versão mais recente
   google_sign_in: ^6.1.5 # ou a versão mais recente
   googleapis: ^11.4.0    # ou a versão mais recente
   googleapis_auth: ^1.4.1 # ou a versão mais recente

@@ -176,6 +176,7 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
   bool _hasPendingBills = false;
   AnimationController? _pendingBillsAnimationController;
   Animation<Offset>? _pendingBillsOffsetAnimation;
+  final String _versionCheckUrl = "https://gist.githubusercontent.com/davidmp24/3bfcf2fd1b620b6a4b8b4994dcc4ee1c/raw/b75de313b5fc08e48503b44bb1a5e70a1be28378/gistfile1.txt";
 
   // Variáveis do Google Drive REMOVIDAS
   // static const String _googleDriveWebClientId = "...";
