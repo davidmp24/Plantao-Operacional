@@ -2,6 +2,11 @@ Bem-vindo ao Plantão Operacional! 🗓️✨
 
 ![Plantão Operacional.png](images%2FPlant%C3%A3o%20Operacional.png)
 
+Download todas as versões:
+
+https://github.com/davidmp24/Plantao-Operacional/releases
+
+
 Sua agenda inteligente para organizar plantões, compromissos e contas, tudo em um só lugar.
 
 O Que o App Faz?
