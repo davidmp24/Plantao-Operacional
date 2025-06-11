@@ -1,42 +1,50 @@
-import 'dart:convert'; // Para JSON encode/decode
-import 'dart:io'; // Para File IO
-import 'dart:typed_data'; // Para Uint8List
-import 'package:collection/collection.dart'; // Para SetEquality
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
+import 'package:collection/collection.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // Para input formatters
-import 'package:hive_flutter/hive_flutter.dart';
-import 'package:table_calendar/table_calendar.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:http/http.dart' as http;
 import 'package:intl/date_symbol_data_local.dart';
-import 'dart:ui' show Shadow;
-import 'package:uuid/uuid.dart'; // Para IDs de contas
-import 'package:file_picker/file_picker.dart'; // Para Backup/Restore
+import 'package:intl/intl.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:table_calendar/table_calendar.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:uuid/uuid.dart';
 
-// Importação condicional para separar o código da web do código nativo.
 import 'backup_helper_mobile.dart' if (dart.library.html) 'backup_helper_web.dart';
+import 'update_service.dart';
 
-import 'package:intl/intl.dart'; // Para formatar data no nome do arquivo
-import 'package:http/http.dart' as http; // Para buscar feriados da API (ainda necessário)
-import 'package:flutter/foundation.dart' show kIsWeb;
-
-// Imports do Google Drive REMOVIDOS
-// import 'package:google_sign_in/google_sign_in.dart';
-// import 'package:googleapis_auth/auth_io.dart' as auth;
-// import 'package:googleapis/drive/v3.dart' as drive;
+// --- Instância Global do Serviço de Atualização ---
+final updateService = UpdateService();
 
 // --- Enum para Modo de Seleção ---
 enum SelectionMode { single, multi }
 
-// --- Função Utilitária para Chave de Data (Baseada em UTC) ---
+// --- Funções Utilitárias Globais ---
 String getDateKey(DateTime date) {
   final utcDate = DateTime.utc(date.year, date.month, date.day);
   return '${utcDate.year.toString().padLeft(4, '0')}-${utcDate.month.toString().padLeft(2, '0')}-${utcDate.day.toString().padLeft(2, '0')}';
 }
 
-// --- Função Utilitária para Normalizar Data (Remove hora, usa UTC) ---
 DateTime normalizeDate(DateTime date) {
   return DateTime.utc(date.year, date.month, date.day);
+}
+
+Future<void> launchURL(String urlString, {BuildContext? context}) async {
+  final Uri url = Uri.parse(urlString);
+  if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+    if (context != null && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Não foi possível abrir o link: $urlString')),
+      );
+    }
+  }
 }
 
 // --- Modelo de Dados para Feriado ---
@@ -69,13 +77,7 @@ class Holiday {
       return Holiday(date: DateTime.now(), localName: "Erro de Parse", name: "", countryCode: "", global: false);
     }
   }
-
-  @override
-  String toString() {
-    return 'Holiday(date: $date, localName: $localName, global: $global)';
-  }
 }
-
 
 // --- Main Function & App Initialization ---
 void main() async {
@@ -86,71 +88,76 @@ void main() async {
   await Hive.openBox('bills_templates');
   await Hive.openBox('bills_paid_status');
   await initializeDateFormatting('pt_BR', null);
-  runApp(MyApp());
+  runApp(const MyApp());
 }
 
 // --- Root Application Widget ---
 class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Plantão Operacional',
-      localizationsDelegates: [
+      localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      supportedLocales: [ const Locale('pt', 'BR'), ],
+      supportedLocales: const [ Locale('pt', 'BR'), ],
       locale: const Locale('pt', 'BR'),
       theme: ThemeData.dark().copyWith(
-          scaffoldBackgroundColor: Color(0xFF1E1E1E),
-          primaryColor: Color(0xFF10A37F),
-          appBarTheme: AppBarTheme( backgroundColor: Color(0xFF262626), foregroundColor: Colors.white,),
-          textTheme: TextTheme(
+          scaffoldBackgroundColor: const Color(0xFF1E1E1E),
+          primaryColor: const Color(0xFF10A37F),
+          appBarTheme: const AppBarTheme( backgroundColor: Color(0xFF262626), foregroundColor: Colors.white,),
+          textTheme: const TextTheme(
             bodyMedium: TextStyle(fontSize: 15, color: Colors.white70),
             bodyLarge: TextStyle(fontSize: 17, fontWeight: FontWeight.w500, color: Colors.white),
             headlineSmall: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
             titleMedium: TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: Colors.white),
+            titleLarge: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
           ),
-          colorScheme: ColorScheme.dark(
+          colorScheme: const ColorScheme.dark(
             primary: Color(0xFF10A37F), secondary: Color(0xFF10A37F), surface: Color(0xFF2C2C2C),
             background: Color(0xFF1E1E1E), onPrimary: Colors.white, onSecondary: Colors.white,
             onSurface: Colors.white, onBackground: Colors.white, error: Colors.redAccent, onError: Colors.white,
           ),
-          floatingActionButtonTheme: FloatingActionButtonThemeData( backgroundColor: Color(0xFF10A37F), foregroundColor: Colors.white,),
-          popupMenuTheme: PopupMenuThemeData( color: Color(0xFF2C2C2C), textStyle: TextStyle(color: Colors.white),),
-          dialogTheme: DialogThemeData(
+          floatingActionButtonTheme: const FloatingActionButtonThemeData( backgroundColor: Color(0xFF10A37F), foregroundColor: Colors.white,),
+          popupMenuTheme: const PopupMenuThemeData( color: Color(0xFF2C2C2C), textStyle: TextStyle(color: Colors.white),),
+          dialogTheme: const DialogThemeData(
             backgroundColor: Color(0xFF2C2C2C),
             titleTextStyle: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
             contentTextStyle: TextStyle(color: Colors.white70, fontSize: 16),
           ),
-          textButtonTheme: TextButtonThemeData( style: TextButton.styleFrom(foregroundColor: Color(0xFF10A37F)),),
+          textButtonTheme: TextButtonThemeData( style: TextButton.styleFrom(foregroundColor: const Color(0xFF10A37F)),),
           cardTheme: CardThemeData(
-            color: Color(0xFF2C2C2C), elevation: 2,
+            color: const Color(0xFF2C2C2C), elevation: 2,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            margin: EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+            margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
           ),
           inputDecorationTheme: InputDecorationTheme(
             border: OutlineInputBorder( borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey[700]!),),
             enabledBorder: OutlineInputBorder( borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey[700]!),),
-            focusedBorder: OutlineInputBorder( borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Color(0xFF10A37F)),),
+            focusedBorder: OutlineInputBorder( borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF10A37F)),),
             labelStyle: TextStyle(color: Colors.grey[400]), hintStyle: TextStyle(color: Colors.grey[600]),
           ),
-          iconTheme: IconThemeData( color: Colors.white70, ),
+          iconTheme: const IconThemeData( color: Colors.white70, ),
           checkboxTheme: CheckboxThemeData(
-            fillColor: MaterialStateProperty.resolveWith((states) { if (states.contains(MaterialState.selected)) { return Color(0xFF10A37F); } return Colors.grey[800]; }),
-            checkColor: MaterialStateProperty.all(Colors.black), side: BorderSide(color: Colors.white54),
+            fillColor: MaterialStateProperty.resolveWith((states) { if (states.contains(MaterialState.selected)) { return const Color(0xFF10A37F); } return Colors.grey[800]; }),
+            checkColor: MaterialStateProperty.all(Colors.black), side: const BorderSide(color: Colors.white54),
           ),
-          dividerTheme: DividerThemeData( color: Colors.white24, thickness: 1, space: 1,)
+          dividerTheme: const DividerThemeData( color: Colors.white24, thickness: 1, space: 1,)
       ),
-      home: WeeklyViewPage(),
+      home: const WeeklyViewPage(),
     );
   }
 }
 
 // --- Weekly View Page Widget (Página Principal) ---
 class WeeklyViewPage extends StatefulWidget {
+  const WeeklyViewPage({super.key});
+
   @override
   _WeeklyViewPageState createState() => _WeeklyViewPageState();
 }
@@ -176,13 +183,6 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
   bool _hasPendingBills = false;
   AnimationController? _pendingBillsAnimationController;
   Animation<Offset>? _pendingBillsOffsetAnimation;
-  final String _versionCheckUrl = "https://gist.githubusercontent.com/davidmp24/3bfcf2fd1b620b6a4b8b4994dcc4ee1c/raw/b75de313b5fc08e48503b44bb1a5e70a1be28378/gistfile1.txt";
-
-  // Variáveis do Google Drive REMOVIDAS
-  // static const String _googleDriveWebClientId = "...";
-  // GoogleSignIn _googleSignIn = GoogleSignIn(...);
-  // GoogleSignInAccount? _currentUser;
-  // auth.AuthClient? _googleDriveAuthClient;
 
   @override
   void initState() {
@@ -198,9 +198,19 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
     _loadAllData();
     _fetchHolidaysForYear(_focusedDay.year);
 
-    // Lógica de inicialização e listeners do GoogleSignIn REMOVIDOS
-    // _googleSignIn.onCurrentUserChanged.listen(...);
-    // _googleSignIn.signInSilently().catchError(...);
+    // MUDANÇA: Agora chama o serviço da maneira correta.
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (mounted) {
+        try {
+          final updateInfo = await updateService.checkForUpdate();
+          if (updateInfo != null && mounted) {
+            updateService.showUpdateDialog(context, updateInfo);
+          }
+        } catch (e) {
+          print("Verificação automática de atualização falhou, mas não mostraremos erro ao usuário no início.");
+        }
+      }
+    });
 
     _pendingBillsAnimationController = AnimationController(
       duration: const Duration(milliseconds: 800),
@@ -222,13 +232,6 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
     _pendingBillsAnimationController?.dispose();
     super.dispose();
   }
-
-  // Funções do Google Drive REMOVIDAS:
-  // _getHttpClient()
-  // _handleGoogleSignIn()
-  // _handleGoogleSignOut()
-  // _performBackupGoogleDrive()
-  // _performRestoreGoogleDrive()
 
   String _getBillPaidStatusKeyForState(String billId, DateTime month) {
     final year = month.year;
@@ -338,7 +341,7 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
     }
     if (!mounted) return;
     setState(() { _isLoadingHolidays = true; });
-    final countryCode = 'BR';
+    const countryCode = 'BR';
     final url = Uri.parse('https://date.nager.at/api/v3/PublicHolidays/$year/$countryCode');
     List<Holiday> fetchedHolidays = [];
     try {
@@ -389,11 +392,11 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text('Folga para ${days.length} dia(s)'),
-        content: Text('Deseja MARCAR ou DESMARCAR folga?'),
+        content: const Text('Deseja MARCAR ou DESMARCAR folga?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, null), child: Text('Cancelar')),
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('DESMARCAR')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text('MARCAR')),
+          TextButton(onPressed: () => Navigator.pop(ctx, null), child: const Text('Cancelar')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('DESMARCAR')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('MARCAR')),
         ],
       ),
     );
@@ -424,7 +427,7 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
   }
 
   void _openBillsPage() async {
-    await Navigator.push(context, MaterialPageRoute(builder: (_) => BillsPage()));
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => const BillsPage()));
     if (mounted) {
       _checkPendingBillsForMonth(_focusedDay);
     }
@@ -442,10 +445,10 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Remover Compromisso?'), content: Text('Deseja remover "$titleToRemove"?'),
+        title: const Text('Remover Compromisso?'), content: Text('Deseja remover "$titleToRemove"?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('Cancelar')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text('Remover', style: TextStyle(color: Colors.redAccent))),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Remover', style: TextStyle(color: Colors.redAccent))),
         ],
       ),
     );
@@ -478,7 +481,7 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
     try {
       if (kIsWeb) {
         await performWebBackup(defaultFileName, jsonBackup);
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Download do backup iniciado!'), duration: Duration(seconds: 4)));
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Download do backup iniciado!'), duration: Duration(seconds: 4)));
       } else {
         final Uint8List fileBytes = Uint8List.fromList(utf8.encode(jsonBackup));
         String? outputFileSavePath = await FilePicker.platform.saveFile(
@@ -490,9 +493,9 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
         );
 
         if (outputFileSavePath != null) {
-          if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Backup local salvo em: $outputFileSavePath'), duration: Duration(seconds: 4)));
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Backup local salvo em: $outputFileSavePath'), duration: const Duration(seconds: 4)));
         } else {
-          if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Backup local cancelado.')));
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Backup local cancelado.')));
         }
       }
     } catch (e) {
@@ -510,11 +513,11 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Restaurar Backup Local?'),
-        content: Text('ATENÇÃO: Dados atuais serão substituídos. Continuar?'),
+        title: const Text('Restaurar Backup Local?'),
+        content: const Text('ATENÇÃO: Dados atuais serão substituídos. Continuar?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('Cancelar')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text('Restaurar', style: TextStyle(color: Colors.orange))),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Restaurar', style: TextStyle(color: Colors.orange))),
         ],
       ),
     );
@@ -552,12 +555,12 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
           await billsPaidStatusBox.putAll(Map<dynamic, dynamic>.from(backupData['bills_paid_status']));
 
           _loadAllData();
-          if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Dados locais restaurados!')));
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Dados locais restaurados!')));
         } else {
           throw Exception("Arquivo de backup inválido.");
         }
       } else {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Restauração local cancelada.')));
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Restauração local cancelada.')));
       }
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao restaurar localmente: $e'), backgroundColor: Colors.red));
@@ -580,7 +583,7 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
         hiveItem['notes'] == item['notes'] && hiveItem['color'] == item['color']);
 
     if (hiveIndex == -1) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao encontrar compromisso para editar.'), backgroundColor: Colors.red));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Erro ao encontrar compromisso para editar.'), backgroundColor: Colors.red));
       return;
     }
 
@@ -591,10 +594,10 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text('Editar Notas - ${commitmentMap['title'] ?? 'Compromisso'}'),
-        content: TextField(controller: notesController, decoration: InputDecoration(hintText: 'Adicione suas notas aqui...', border: OutlineInputBorder()), maxLines: 4, textCapitalization: TextCapitalization.sentences, autofocus: true),
+        content: TextField(controller: notesController, decoration: const InputDecoration(hintText: 'Adicione suas notas aqui...', border: OutlineInputBorder()), maxLines: 4, textCapitalization: TextCapitalization.sentences, autofocus: true),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('Cancelar')),
-          TextButton(onPressed: () { Navigator.pop(ctx, true); }, child: Text('Salvar')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          TextButton(onPressed: () { Navigator.pop(ctx, true); }, child: const Text('Salvar')),
         ],
       ),
     );
@@ -606,7 +609,7 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
         await _commitmentsBox.put(dateKey, actualCommitments);
         _loadAllData();
       } catch (e) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao salvar notas.'), backgroundColor: Colors.red));
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Erro ao salvar notas.'), backgroundColor: Colors.red));
       }
     }
   }
@@ -628,7 +631,7 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
     if (uniqueCommitmentColors.isNotEmpty && !isOutside) {
       cellInnerContent = Stack(alignment: Alignment.center, children: [
         Row(children: uniqueCommitmentColors.map((color) => Expanded(child: Container(color: color))).toList()),
-        Text('${day.day}', style: textStyle.copyWith(fontWeight: fontWeight, color: Colors.white, shadows: [Shadow(blurRadius: 1.5, color: Colors.black.withOpacity(0.9), offset: Offset(0,0))])),
+        Text('${day.day}', style: textStyle.copyWith(fontWeight: fontWeight, color: Colors.white, shadows: [const Shadow(blurRadius: 1.5, color: Color.fromRGBO(0, 0, 0, 0.9), offset: Offset(0,0))])),
         if (isMultiSelected) Positioned(top: 2, left: 2, child: Icon(Icons.check_circle, color: Colors.white.withOpacity(0.8), size: 14)),
         if (isHoliday) Positioned(bottom: 2, right: 2, child: Icon(Icons.celebration_rounded, size: 12, color: Colors.white.withOpacity(0.9))),
       ]);
@@ -667,7 +670,7 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
         title: Text(_selectionMode == SelectionMode.multi ? 'Seleção Múltipla (${_multiSelectedDays.length})' : 'Agenda Mensal'),
         actions: [
           IconButton(
-            icon: Icon(Icons.crop_square), tooltip: 'Seleção Única',
+            icon: const Icon(Icons.crop_square), tooltip: 'Seleção Única',
             color: _selectionMode == SelectionMode.single ? Theme.of(context).colorScheme.primary : Colors.white54,
             onPressed: () {
               if (_selectionMode != SelectionMode.single) {
@@ -679,7 +682,7 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
             },
           ),
           IconButton(
-            icon: Icon(Icons.select_all), tooltip: 'Seleção Múltipla',
+            icon: const Icon(Icons.select_all), tooltip: 'Seleção Múltipla',
             color: _selectionMode == SelectionMode.multi ? Theme.of(context).colorScheme.primary : Colors.white54,
             onPressed: () {
               if (_selectionMode != SelectionMode.multi) {
@@ -740,15 +743,15 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
               calendarFormat: CalendarFormat.month,
               startingDayOfWeek: StartingDayOfWeek.monday,
               calendarStyle: CalendarStyle(
-                outsideDaysVisible: true, defaultTextStyle: TextStyle(fontSize: 15, color: Colors.white),
-                weekendTextStyle: TextStyle(fontSize: 15, color: Colors.white70),
+                outsideDaysVisible: true, defaultTextStyle: const TextStyle(fontSize: 15, color: Colors.white),
+                weekendTextStyle: const TextStyle(fontSize: 15, color: Colors.white70),
                 outsideTextStyle: TextStyle(fontSize: 14, color: Colors.grey[700]),
                 selectedDecoration: BoxDecoration(color: Theme.of(context).colorScheme.primary.withOpacity(0.7), shape: BoxShape.circle),
                 todayDecoration: BoxDecoration(color: Theme.of(context).colorScheme.primary.withOpacity(0.4), shape: BoxShape.circle),
-                selectedTextStyle: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
-                todayTextStyle: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
+                selectedTextStyle: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
+                todayTextStyle: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold),
               ),
-              headerStyle: HeaderStyle(
+              headerStyle: const HeaderStyle(
                 formatButtonVisible: false, titleCentered: true, titleTextStyle: TextStyle(fontSize: 18.0, color: Colors.white),
                 leftChevronIcon: Icon(Icons.chevron_left, color: Colors.white), rightChevronIcon: Icon(Icons.chevron_right, color: Colors.white),
               ),
@@ -762,9 +765,9 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
                   List<Widget> markers = [];
                   if (userEventsCount > 0) {
                     markers.add(Positioned(right: 2, top: 2, child: Container(
-                      padding: EdgeInsets.all(2), decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.black.withOpacity(0.6)),
-                      constraints: BoxConstraints(minWidth: 16, minHeight: 16),
-                      child: Text('$userEventsCount', style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
+                      padding: const EdgeInsets.all(2), decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.black.withOpacity(0.6)),
+                      constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                      child: Text('$userEventsCount', style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
                     )));
                   }
                   if (hasHoliday) markers.add(Positioned(bottom: 4, left: 4, child: Icon(Icons.celebration_rounded, size: 10, color: Colors.amber[600])));
@@ -813,7 +816,7 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
                 }
 
                 return ListView.builder(
-                  padding: EdgeInsets.only(bottom: 80, left: 8, right: 8),
+                  padding: const EdgeInsets.only(bottom: 80, left: 8, right: 8),
                   itemCount: displayItems.length,
                   itemBuilder: (_, index) {
                     final item = displayItems[index];
@@ -828,10 +831,10 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
 
                       if (isHolidayItem) {
                         itemColor = Colors.amber[800]!;
-                        leadingIcon = Icon(Icons.celebration_rounded, color: Colors.white, size: 22);
+                        leadingIcon = const Icon(Icons.celebration_rounded, color: Colors.white, size: 22);
                       } else if (isDayOff) {
                         itemColor = Color(item['color'] as int? ?? Colors.grey.value);
-                        leadingIcon = Icon(Icons.free_breakfast_outlined, size: 20, color: Colors.white70);
+                        leadingIcon = const Icon(Icons.free_breakfast_outlined, size: 20, color: Colors.white70);
                       } else {
                         itemColor = Color(item['color'] as int? ?? Theme.of(context).colorScheme.primary.value);
                       }
@@ -839,7 +842,7 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
                         child: ListTile(
                           leading: CircleAvatar(backgroundColor: itemColor, child: leadingIcon),
                           title: Text(
-                            isHolidayItem ? "$title" : (hour.isNotEmpty ? '[$hour] $title' : title),
+                            isHolidayItem ? title : (hour.isNotEmpty ? '[$hour] $title' : title),
                             style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                               decoration: isDayOff ? TextDecoration.lineThrough : TextDecoration.none,
                               color: isDayOff ? Colors.grey[500] : (isHolidayItem ? Colors.amber[200] : Colors.white),
@@ -853,24 +856,24 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
                               ? Row(mainAxisSize: MainAxisSize.min, children: [
                             if (!isDayOff)
                               IconButton(
-                                  icon: Icon(Icons.note_alt_outlined, size: 20),
+                                  icon: const Icon(Icons.note_alt_outlined, size: 20),
                                   tooltip: 'Editar Notas',
                                   color: Colors.white54,
                                   onPressed: () => _editCommitmentNotes(index),
-                                  constraints: BoxConstraints(),
-                                  padding: EdgeInsets.symmetric(horizontal: 4)),
+                                  constraints: const BoxConstraints(),
+                                  padding: const EdgeInsets.symmetric(horizontal: 4)),
                             IconButton(
                                 icon: Icon(Icons.delete_outline, color: Colors.redAccent.withOpacity(0.7)),
                                 tooltip: "Remover",
                                 onPressed: () => _confirmRemove(index),
-                                constraints: BoxConstraints(),
-                                padding: EdgeInsets.symmetric(horizontal: 4)),
+                                constraints: const BoxConstraints(),
+                                padding: const EdgeInsets.symmetric(horizontal: 4)),
                           ])
                               : null,
                         ),
                       );
                     } else {
-                      return ListTile(title: Text("Inválido"));
+                      return const ListTile(title: Text("Inválido"));
                     }
                   },
                 );
@@ -888,13 +891,13 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
                 child: GestureDetector(
                   onTap: () { _openBillsPage(); },
                   child: Container(
-                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     decoration: BoxDecoration(
                       color: Colors.redAccent.withOpacity(0.95),
                       borderRadius: BorderRadius.circular(20),
-                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 5, offset: Offset(0, 2))],
+                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 5, offset: const Offset(0, 2))],
                     ),
-                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    child: const Row(mainAxisSize: MainAxisSize.min, children: [
                       Icon(Icons.warning_amber_rounded, color: Colors.white, size: 18),
                       SizedBox(width: 8),
                       Text("Contas pendentes este mês!", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
@@ -909,13 +912,47 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
             color: Colors.black.withOpacity(0.5),
             child: Center(child: CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).colorScheme.primary))),
           ),
+
+        // Tela de progresso de download global
+        ValueListenableBuilder<bool>(
+          valueListenable: updateService.isDownloading,
+          builder: (context, isDownloading, child) {
+            if (!isDownloading) return const SizedBox.shrink();
+
+            return Positioned.fill(
+              child: Container(
+                color: Colors.black.withOpacity(0.7),
+                child: Center(
+                  child: ValueListenableBuilder<double>(
+                    valueListenable: updateService.downloadProgress,
+                    builder: (context, progress, child) {
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CircularProgressIndicator(value: progress > 0 ? progress : null),
+                          const SizedBox(height: 20),
+                          Text(
+                            progress > 0
+                                ? 'Baixando atualização... ${(progress * 100).toStringAsFixed(0)}%'
+                                : 'Iniciando download...',
+                            style: const TextStyle(color: Colors.white, fontSize: 16),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
       ]),
       floatingActionButton: FloatingActionButton(
         onPressed: () {},
         tooltip: _selectionMode == SelectionMode.multi ? 'Ações para Selecionados' : 'Adicionar/Gerenciar',
         child: PopupMenuButton<String>(
           icon: Icon(_selectionMode == SelectionMode.multi && _multiSelectedDays.isNotEmpty ? Icons.playlist_add_check : Icons.add, color: Colors.white),
-          offset: Offset(0, -kToolbarHeight * 3.5), // Ajustado para não cobrir tanto
+          offset: const Offset(0, -kToolbarHeight * 4.5),
           color: Theme.of(context).popupMenuTheme.color,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           itemBuilder: (_) {
@@ -924,32 +961,29 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
               items.add(PopupMenuItem(value: 'add_multi', enabled: _multiSelectedDays.isNotEmpty, child: ListTile(leading: Icon(Icons.add_task, color: _multiSelectedDays.isNotEmpty ? Theme.of(context).iconTheme.color : Colors.grey), title: Text('Adicionar aos ${(_multiSelectedDays.length)} dias'))));
               items.add(PopupMenuItem(value: 'folga_multi', enabled: _multiSelectedDays.isNotEmpty, child: ListTile(leading: Icon(Icons.free_breakfast_outlined, color: _multiSelectedDays.isNotEmpty ? Theme.of(context).iconTheme.color : Colors.grey), title: Text('Folga nos ${(_multiSelectedDays.length)} dias'))));
             } else {
-              items.add(PopupMenuItem(value: 'adicionar_single', child: ListTile(leading: Icon(Icons.add_task, color: Theme.of(context).iconTheme.color), title: Text('Adicionar Compromisso'))));
-              items.add(PopupMenuItem(value: 'folga_single', child: ListTile(leading: Icon(Icons.free_breakfast_outlined, color: Theme.of(context).iconTheme.color), title: Text('Marcar/Desmarcar Folga'))));
+              items.add(PopupMenuItem(value: 'adicionar_single', child: ListTile(leading: Icon(Icons.add_task, color: Theme.of(context).iconTheme.color), title: const Text('Adicionar Compromisso'))));
+              items.add(PopupMenuItem(value: 'folga_single', child: ListTile(leading: Icon(Icons.free_breakfast_outlined, color: Theme.of(context).iconTheme.color), title: const Text('Marcar/Desmarcar Folga'))));
             }
             items.add(const PopupMenuDivider());
-            items.add(PopupMenuItem(value: 'ver_contas', child: ListTile(leading: Icon(Icons.request_quote_outlined, color: Theme.of(context).iconTheme.color), title: Text('Ver Contas Mensais'))));
-
-            // Itens do Google Drive REMOVIDOS daqui
-            // if (_currentUser == null) { ... } else { ... }
+            items.add(PopupMenuItem(value: 'ver_contas', child: ListTile(leading: Icon(Icons.request_quote_outlined, color: Theme.of(context).iconTheme.color), title: const Text('Ver Contas Mensais'))));
 
             items.add(const PopupMenuDivider());
-            items.add(PopupMenuItem(value: 'backup_local', child: ListTile(leading: Icon(Icons.save_alt, color: Theme.of(context).iconTheme.color), title: Text('Backup Local'))));
-            items.add(PopupMenuItem(value: 'restore_local', child: ListTile(leading: Icon(Icons.restore_from_trash_outlined, color: Theme.of(context).iconTheme.color), title: Text('Restaurar Local'))));
+            items.add(PopupMenuItem(value: 'show_info', child: ListTile(leading: Icon(Icons.info_outline, color: Theme.of(context).iconTheme.color), title: const Text('Sobre o App'))));
+
+            items.add(const PopupMenuDivider());
+            items.add(PopupMenuItem(value: 'backup_local', child: ListTile(leading: Icon(Icons.save_alt, color: Theme.of(context).iconTheme.color), title: const Text('Backup Local'))));
+            items.add(PopupMenuItem(value: 'restore_local', child: ListTile(leading: Icon(Icons.restore_from_trash_outlined, color: Theme.of(context).iconTheme.color), title: const Text('Restaurar Local'))));
             return items;
           },
           onSelected: (value) async {
             if (value == 'ver_contas') {
               _openBillsPage();
-              // Cases do Google Drive REMOVIDOS
-              // } else if (value == 'connect_google_drive') { ...
-              // } else if (value == 'disconnect_google_drive') { ...
-              // } else if (value == 'backup_google_drive') { ...
-              // } else if (value == 'restore_google_drive') { ...
             } else if (value == 'backup_local') {
               _performBackupLocal();
             } else if (value == 'restore_local') {
               _performRestoreLocal();
+            } else if (value == 'show_info') {
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const InfoPage()));
             } else if (_selectionMode == SelectionMode.single) {
               if (value == 'adicionar_single') _openTemplateSelectorForSingle();
               if (value == 'folga_single') _toggleDayOffSingle(_selectedDate);
@@ -986,7 +1020,7 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
 // --- Template Selector Page ---
 class TemplateSelectorPage extends StatefulWidget {
   final DateTime? selectedDate;
-  TemplateSelectorPage({this.selectedDate});
+  const TemplateSelectorPage({super.key, this.selectedDate});
 
   @override
   _TemplateSelectorPageState createState() => _TemplateSelectorPageState();
@@ -1037,7 +1071,7 @@ class _TemplateSelectorPageState extends State<TemplateSelectorPage> {
   }
 
   void _navigateToTemplateManager() async {
-    await Navigator.push(context, MaterialPageRoute(builder: (_) => TemplateManagerPage()));
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => const TemplateManagerPage()));
     if (mounted) {
       _loadTemplates();
     }
@@ -1050,7 +1084,7 @@ class _TemplateSelectorPageState extends State<TemplateSelectorPage> {
         title: Text(widget.selectedDate != null ? 'Adicionar Compromisso' : 'Selecionar Modelo Comp.'),
         actions: [
           IconButton(
-            icon: Icon(Icons.settings_outlined),
+            icon: const Icon(Icons.settings_outlined),
             tooltip: 'Gerenciar Modelos de Compromisso',
             onPressed: _navigateToTemplateManager,
           ),
@@ -1064,10 +1098,10 @@ class _TemplateSelectorPageState extends State<TemplateSelectorPage> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text("Nenhum modelo de compromisso criado.", textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyMedium),
-                SizedBox(height: 16),
+                const SizedBox(height: 16),
                 ElevatedButton.icon(
-                  icon: Icon(Icons.add_circle_outline),
-                  label: Text("Criar Novo Modelo"),
+                  icon: const Icon(Icons.add_circle_outline),
+                  label: const Text("Criar Novo Modelo"),
                   onPressed: _navigateToTemplateManager,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Theme.of(context).colorScheme.primary,
@@ -1078,7 +1112,7 @@ class _TemplateSelectorPageState extends State<TemplateSelectorPage> {
             ),
           ))
           : ListView.builder(
-        padding: EdgeInsets.all(8),
+        padding: const EdgeInsets.all(8),
         itemCount: templates.length,
         itemBuilder: (_, index) {
           final template = templates[index];
@@ -1102,6 +1136,8 @@ class _TemplateSelectorPageState extends State<TemplateSelectorPage> {
 
 // --- Template Manager Page ---
 class TemplateManagerPage extends StatefulWidget {
+  const TemplateManagerPage({super.key});
+
   @override
   _TemplateManagerPageState createState() => _TemplateManagerPageState();
 }
@@ -1140,11 +1176,11 @@ class _TemplateManagerPageState extends State<TemplateManagerPage> {
       if (rawData is Map) {
         existingTemplate = Map<String, dynamic>.from(rawData);
       } else {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao carregar modelo.'), backgroundColor: Colors.red));
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Erro ao carregar modelo.'), backgroundColor: Colors.red));
         return;
       }
     }
-    Color selectedColor = isEditing ? Color(existingTemplate!['color'] as int? ?? Colors.blue.value) : Color(0xFF10A37F);
+    Color selectedColor = isEditing ? Color(existingTemplate!['color'] as int? ?? Colors.blue.value) : const Color(0xFF10A37F);
     final controllerTitle = TextEditingController(text: isEditing ? existingTemplate!['title'] as String? ?? '' : '');
     final controllerHour = TextEditingController(text: isEditing ? existingTemplate!['hour'] as String? ?? '' : '');
     final controllerNotes = TextEditingController(text: isEditing ? existingTemplate!['notes'] as String? ?? '' : '');
@@ -1156,14 +1192,14 @@ class _TemplateManagerPageState extends State<TemplateManagerPage> {
           title: Text(isEditing ? 'Editar Modelo Comp.' : 'Novo Modelo Comp.'),
           content: SingleChildScrollView(
             child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-              TextField(controller: controllerTitle, decoration: InputDecoration(labelText: 'Título *', hintText: "Ex: Plantão"), maxLength: 50, textCapitalization: TextCapitalization.sentences),
-              SizedBox(height: 8),
-              TextField(controller: controllerHour, decoration: InputDecoration(labelText: 'Horário', hintText: "Ex: 08:00 - 18:00"), maxLength: 30),
-              SizedBox(height: 8),
-              TextField(controller: controllerNotes, decoration: InputDecoration(labelText: 'Notas', hintText: "Ex: Levar café"), maxLines: 3, maxLength: 100, textCapitalization: TextCapitalization.sentences),
-              SizedBox(height: 15),
-              Text("Cor:", style: Theme.of(context).textTheme.titleMedium), SizedBox(height: 10),
-              BlockPicker(pickerColor: selectedColor, onColorChanged: (color) => selectedColor = color, availableColors: [
+              TextField(controller: controllerTitle, decoration: const InputDecoration(labelText: 'Título *', hintText: "Ex: Plantão"), maxLength: 50, textCapitalization: TextCapitalization.sentences),
+              const SizedBox(height: 8),
+              TextField(controller: controllerHour, decoration: const InputDecoration(labelText: 'Horário', hintText: "Ex: 08:00 - 18:00"), maxLength: 30),
+              const SizedBox(height: 8),
+              TextField(controller: controllerNotes, decoration: const InputDecoration(labelText: 'Notas', hintText: "Ex: Levar café"), maxLines: 3, maxLength: 100, textCapitalization: TextCapitalization.sentences),
+              const SizedBox(height: 15),
+              Text("Cor:", style: Theme.of(context).textTheme.titleMedium), const SizedBox(height: 10),
+              BlockPicker(pickerColor: selectedColor, onColorChanged: (color) => selectedColor = color, availableColors: const [
                 Colors.red, Colors.pink, Colors.purple, Colors.deepPurple, Colors.indigo, Colors.blue, Colors.lightBlue, Colors.cyan,
                 Colors.teal, Colors.green, Colors.lightGreen, Colors.lime, Colors.yellow, Colors.amber, Colors.orange, Colors.deepOrange,
                 Colors.brown, Colors.grey, Colors.blueGrey, Color(0xFF10A37F)
@@ -1171,10 +1207,10 @@ class _TemplateManagerPageState extends State<TemplateManagerPage> {
             ]),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context, false), child: Text('Cancelar')),
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
             TextButton(onPressed: () async {
               if (controllerTitle.text.trim().isEmpty) {
-                if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Título é obrigatório.'), backgroundColor: Colors.orange[800]));
+                if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: const Text('Título é obrigatório.'), backgroundColor: Colors.orange[800]));
                 return;
               }
               final template = {'title': controllerTitle.text.trim(), 'hour': controllerHour.text.trim(), 'notes': controllerNotes.text.trim(), 'color': selectedColor.value};
@@ -1186,7 +1222,7 @@ class _TemplateManagerPageState extends State<TemplateManagerPage> {
               } catch (e) {
                 if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao salvar: $e'), backgroundColor: Colors.red));
               }
-            }, child: Text('Salvar')),
+            }, child: const Text('Salvar')),
           ],
         ));
   }
@@ -1201,10 +1237,10 @@ class _TemplateManagerPageState extends State<TemplateManagerPage> {
     final confirm = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: Text('Excluir Modelo?'), content: Text('Excluir o modelo "$title"?'),
+          title: const Text('Excluir Modelo?'), content: Text('Excluir o modelo "$title"?'),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('Cancelar')),
-            TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text('Excluir', style: TextStyle(color: Colors.redAccent))),
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+            TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Excluir', style: TextStyle(color: Colors.redAccent))),
           ],
         ));
     if (confirm == true) {
@@ -1220,11 +1256,11 @@ class _TemplateManagerPageState extends State<TemplateManagerPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        appBar: AppBar(title: Text('Gerenciar Modelos Comp.'), actions: [IconButton(onPressed: () => _addOrEditTemplate(), icon: Icon(Icons.add_circle_outline), tooltip: "Adicionar Modelo")]),
+        appBar: AppBar(title: const Text('Gerenciar Modelos Comp.'), actions: [IconButton(onPressed: () => _addOrEditTemplate(), icon: const Icon(Icons.add_circle_outline), tooltip: "Adicionar Modelo")]),
         body: _templateKeys.isEmpty
             ? Center(child: Padding(padding: const EdgeInsets.all(20.0), child: Text("Nenhum modelo criado.", textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyMedium)))
             : ListView.builder(
-            padding: EdgeInsets.only(top: 8, bottom: 80, left: 8, right: 8),
+            padding: const EdgeInsets.only(top: 8, bottom: 80, left: 8, right: 8),
             itemCount: _templateKeys.length,
             itemBuilder: (_, index) {
               final key = _templateKeys[index];
@@ -1245,8 +1281,8 @@ class _TemplateManagerPageState extends State<TemplateManagerPage> {
                   title: Text(title, style: Theme.of(context).textTheme.bodyLarge),
                   subtitle: subtitle.isNotEmpty ? Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 13)) : null,
                   trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                    IconButton(icon: Icon(Icons.edit_outlined, size: 22), color: Colors.white70, tooltip: 'Editar', onPressed: () => _addOrEditTemplate(editIndex: index), constraints: BoxConstraints(), padding: EdgeInsets.symmetric(horizontal: 8)),
-                    IconButton(icon: Icon(Icons.delete_outline, size: 22), color: Colors.redAccent.withOpacity(0.8), tooltip: 'Excluir', onPressed: () => _deleteTemplate(index), constraints: BoxConstraints(), padding: EdgeInsets.symmetric(horizontal: 8)),
+                    IconButton(icon: const Icon(Icons.edit_outlined, size: 22), color: Colors.white70, tooltip: 'Editar', onPressed: () => _addOrEditTemplate(editIndex: index), constraints: const BoxConstraints(), padding: const EdgeInsets.symmetric(horizontal: 8)),
+                    IconButton(icon: Icon(Icons.delete_outline, size: 22), color: Colors.redAccent.withOpacity(0.8), tooltip: 'Excluir', onPressed: () => _deleteTemplate(index), constraints: const BoxConstraints(), padding: const EdgeInsets.symmetric(horizontal: 8)),
                   ]),
                 ));
               } else {
@@ -1258,6 +1294,8 @@ class _TemplateManagerPageState extends State<TemplateManagerPage> {
 
 // --- Bill Manager Page ---
 class BillManagerPage extends StatefulWidget {
+  const BillManagerPage({super.key});
+
   @override
   _BillManagerPageState createState() => _BillManagerPageState();
 }
@@ -1265,7 +1303,7 @@ class BillManagerPage extends StatefulWidget {
 class _BillManagerPageState extends State<BillManagerPage> {
   late Box _billsBox;
   List<Map<String, dynamic>> _billTemplates = [];
-  final _uuid = Uuid();
+  final _uuid = const Uuid();
 
   @override
   void initState() {
@@ -1304,7 +1342,7 @@ class _BillManagerPageState extends State<BillManagerPage> {
         existingBill = Map<String, dynamic>.from(rawData);
         existingBill['id'] = editId;
       } else {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao carregar conta.'), backgroundColor: Colors.red));
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Erro ao carregar conta.'), backgroundColor: Colors.red));
         return;
       }
     }
@@ -1317,27 +1355,27 @@ class _BillManagerPageState extends State<BillManagerPage> {
       builder: (_) => AlertDialog(
         title: Text(isEditing ? 'Editar Modelo Conta' : 'Novo Modelo Conta'),
         content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          TextField(controller: controllerTitle, decoration: InputDecoration(labelText: 'Título *', hintText: "Ex: Aluguel"), maxLength: 50, textCapitalization: TextCapitalization.sentences),
-          SizedBox(height: 8),
-          TextField(controller: controllerDay, decoration: InputDecoration(labelText: 'Dia Venc./Ref. *', hintText: "Ex: 5"), keyboardType: TextInputType.number, inputFormatters: [FilteringTextInputFormatter.digitsOnly], maxLength: 2),
-          SizedBox(height: 8),
-          TextField(controller: controllerNotes, decoration: InputDecoration(labelText: 'Notas'), maxLines: 2, maxLength: 100, textCapitalization: TextCapitalization.sentences),
+          TextField(controller: controllerTitle, decoration: const InputDecoration(labelText: 'Título *', hintText: "Ex: Aluguel"), maxLength: 50, textCapitalization: TextCapitalization.sentences),
+          const SizedBox(height: 8),
+          TextField(controller: controllerDay, decoration: const InputDecoration(labelText: 'Dia Venc./Ref. *', hintText: "Ex: 5"), keyboardType: TextInputType.number, inputFormatters: [FilteringTextInputFormatter.digitsOnly], maxLength: 2),
+          const SizedBox(height: 8),
+          TextField(controller: controllerNotes, decoration: const InputDecoration(labelText: 'Notas'), maxLines: 2, maxLength: 100, textCapitalization: TextCapitalization.sentences),
         ])),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: Text('Cancelar')),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
           TextButton(onPressed: () async {
             final title = controllerTitle.text.trim(); final dayString = controllerDay.text.trim(); final notes = controllerNotes.text.trim();
             if (title.isEmpty) {
-              if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Título obrigatório.'), backgroundColor: Colors.orange[800]));
+              if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: const Text('Título obrigatório.'), backgroundColor: Colors.orange[800]));
               return;
             }
             if (dayString.isEmpty) {
-              if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Dia obrigatório.'), backgroundColor: Colors.orange[800]));
+              if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: const Text('Dia obrigatório.'), backgroundColor: Colors.orange[800]));
               return;
             }
             final dayOfMonth = int.tryParse(dayString);
             if (dayOfMonth == null || dayOfMonth < 1 || dayOfMonth > 31) {
-              if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Dia inválido (1-31).'), backgroundColor: Colors.orange[800]));
+              if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: const Text('Dia inválido (1-31).'), backgroundColor: Colors.orange[800]));
               return;
             }
             final billData = {'title': title, 'dayOfMonth': dayOfMonth, 'notes': notes};
@@ -1349,7 +1387,7 @@ class _BillManagerPageState extends State<BillManagerPage> {
             } catch (e) {
               if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao salvar: $e'), backgroundColor: Colors.red));
             }
-          }, child: Text('Salvar')),
+          }, child: const Text('Salvar')),
         ],
       ),
     );
@@ -1363,10 +1401,10 @@ class _BillManagerPageState extends State<BillManagerPage> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Excluir Modelo Conta?'), content: Text('Excluir o modelo "$title"?'),
+        title: const Text('Excluir Modelo Conta?'), content: Text('Excluir o modelo "$title"?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('Cancelar')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text('Excluir', style: TextStyle(color: Colors.redAccent))),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Excluir', style: TextStyle(color: Colors.redAccent))),
         ],
       ),
     );
@@ -1383,11 +1421,11 @@ class _BillManagerPageState extends State<BillManagerPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Gerenciar Modelos de Conta'), actions: [IconButton(onPressed: () => _addOrEditBill(), icon: Icon(Icons.add_circle_outline), tooltip: "Adicionar Modelo Conta")]),
+      appBar: AppBar(title: const Text('Gerenciar Modelos de Conta'), actions: [IconButton(onPressed: () => _addOrEditBill(), icon: const Icon(Icons.add_circle_outline), tooltip: "Adicionar Modelo Conta")]),
       body: _billTemplates.isEmpty
           ? Center(child: Padding(padding: const EdgeInsets.all(20.0), child: Text("Nenhum modelo de conta mensal.", textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyMedium)))
           : ListView.builder(
-        padding: EdgeInsets.only(top: 8, bottom: 80, left: 8, right: 8),
+        padding: const EdgeInsets.only(top: 8, bottom: 80, left: 8, right: 8),
         itemCount: _billTemplates.length,
         itemBuilder: (_, index) {
           final bill = _billTemplates[index];
@@ -1400,8 +1438,8 @@ class _BillManagerPageState extends State<BillManagerPage> {
             title: Text(title, style: Theme.of(context).textTheme.bodyLarge),
             subtitle: Text('Dia $dayOfMonth${notes.isNotEmpty ? " - $notes" : ""}', maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 13)),
             trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-              IconButton(icon: Icon(Icons.edit_outlined, size: 22), color: Colors.white70, tooltip: 'Editar', onPressed: () => _addOrEditBill(editId: billId), constraints: BoxConstraints(), padding: EdgeInsets.symmetric(horizontal: 8)),
-              IconButton(icon: Icon(Icons.delete_outline, size: 22), color: Colors.redAccent.withOpacity(0.8), tooltip: 'Excluir', onPressed: () => _deleteBill(billId), constraints: BoxConstraints(), padding: EdgeInsets.symmetric(horizontal: 8)),
+              IconButton(icon: const Icon(Icons.edit_outlined, size: 22), color: Colors.white70, tooltip: 'Editar', onPressed: () => _addOrEditBill(editId: billId), constraints: const BoxConstraints(), padding: const EdgeInsets.symmetric(horizontal: 8)),
+              IconButton(icon: Icon(Icons.delete_outline, size: 22), color: Colors.redAccent.withOpacity(0.8), tooltip: 'Excluir', onPressed: () => _deleteBill(billId), constraints: const BoxConstraints(), padding: const EdgeInsets.symmetric(horizontal: 8)),
             ]),
           ));
         },
@@ -1410,12 +1448,10 @@ class _BillManagerPageState extends State<BillManagerPage> {
   }
 }
 
-// ... (outras importações do seu main.dart)
-// Não precisa de novas importações específicas para esta mudança na BillsPage,
-// mas certifique-se de que 'package:flutter/material.dart' está lá.
-
 // --- Bills Page ---
 class BillsPage extends StatefulWidget {
+  const BillsPage({super.key});
+
   @override
   _BillsPageState createState() => _BillsPageState();
 }
@@ -1493,7 +1529,7 @@ class _BillsPageState extends State<BillsPage> {
         if (mounted) setState(() { _paidBillMonthKeys.add(key); });
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao atualizar status da conta.'), backgroundColor: Colors.red));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Erro ao atualizar status da conta.'), backgroundColor: Colors.red));
     }
   }
 
@@ -1516,13 +1552,10 @@ class _BillsPageState extends State<BillsPage> {
   }
 
   void _openBillManager() async {
-    // Supondo que BillManagerPage está definida em outro lugar ou no mesmo arquivo.
-    // Se BillManagerPage foi removida ou precisa ser ajustada, isso precisaria ser tratado.
-    // Por agora, manteremos a chamada como está.
-    await Navigator.push(context, MaterialPageRoute(builder: (_) => BillManagerPage()));
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => const BillManagerPage()));
     if (mounted) {
-      _loadBillTemplates(); // Recarrega os modelos de conta
-      _loadPaidStatusesForMonth(_focusedMonth); // Recarrega os status de pagamento para o mês atual
+      _loadBillTemplates();
+      _loadPaidStatusesForMonth(_focusedMonth);
     }
   }
 
@@ -1531,18 +1564,18 @@ class _BillsPageState extends State<BillsPage> {
     final MaterialLocalizations localizations = MaterialLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: Text('Contas Mensais'),
+        title: const Text('Contas Mensais'),
         actions: [
-          IconButton(icon: Icon(Icons.settings_outlined), tooltip: 'Gerenciar Modelos de Conta', onPressed: _openBillManager),
+          IconButton(icon: const Icon(Icons.settings_outlined), tooltip: 'Gerenciar Modelos de Conta', onPressed: _openBillManager),
         ],
       ),
       body: Column(children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
           child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-            IconButton(icon: Icon(Icons.chevron_left), onPressed: _navigateToPreviousMonth, tooltip: 'Mês Anterior'),
+            IconButton(icon: const Icon(Icons.chevron_left), onPressed: _navigateToPreviousMonth, tooltip: 'Mês Anterior'),
             Text(localizations.formatMonthYear(_focusedMonth), style: Theme.of(context).textTheme.titleLarge),
-            IconButton(icon: Icon(Icons.chevron_right), onPressed: _navigateToNextMonth, tooltip: 'Próximo Mês'),
+            IconButton(icon: const Icon(Icons.chevron_right), onPressed: _navigateToNextMonth, tooltip: 'Próximo Mês'),
           ]),
         ),
         const Divider(),
@@ -1552,16 +1585,16 @@ class _BillsPageState extends State<BillsPage> {
             padding: const EdgeInsets.all(20.0),
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               Text("Nenhum modelo de conta mensal cadastrado.", textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyMedium),
-              SizedBox(height: 10),
+              const SizedBox(height: 10),
               ElevatedButton.icon(
-                icon: Icon(Icons.settings_outlined), label: Text("Gerenciar Modelos"),
+                icon: const Icon(Icons.settings_outlined), label: const Text("Gerenciar Modelos"),
                 onPressed: _openBillManager,
                 style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary, foregroundColor: Theme.of(context).colorScheme.onPrimary),
               )
             ]),
           ))
               : ListView.builder(
-            padding: EdgeInsets.only(bottom: 20, left: 4, right: 4),
+            padding: const EdgeInsets.only(bottom: 20, left: 4, right: 4),
             itemCount: _billTemplates.length,
             itemBuilder: (context, index) {
               final bill = _billTemplates[index];
@@ -1571,50 +1604,37 @@ class _BillsPageState extends State<BillsPage> {
               final isPaid = _isBillPaid(billId, _focusedMonth);
               final notes = bill['notes'] as String? ?? '';
 
-              // --- INÍCIO DA LÓGICA DE DATA VENCIDA ---
               bool isOverdue = false;
-              Color titleColor = Colors.white; // Cor padrão para pendente não vencida
+              Color titleColor = Colors.white;
               Color dayLabelColor = Theme.of(context).colorScheme.primary;
               Color dayBackgroundColor = Theme.of(context).colorScheme.primary.withOpacity(0.2);
 
-
               if (!isPaid) {
-                // Só verificamos se está vencido se não estiver pago
                 final now = DateTime.now();
-                // Normaliza 'hoje' para comparar apenas ano, mês e dia (sem horas/minutos)
                 final todayNormalized = DateTime.utc(now.year, now.month, now.day);
-                // Cria a data de vencimento da conta para o mês focado
                 DateTime billDueDateInFocusedMonth;
                 try {
-                  // Tenta criar a data. Pode falhar se dayOfMonth for > dias no mês (ex: Dia 31 em Fev)
                   billDueDateInFocusedMonth = DateTime.utc(_focusedMonth.year, _focusedMonth.month, dayOfMonth);
                 } catch (e) {
-                  // Se o dia for inválido para o mês (ex: dia 30 de Fev), considera o último dia do mês
-                  // ou uma lógica que faça sentido para o seu app.
-                  // Para simplificar, se der erro, não consideraremos vencido aqui,
-                  // ou podemos pegar o último dia do _focusedMonth.
-                  // Exemplo: pegar último dia do mês
                   final lastDayOfMonth = DateTime.utc(_focusedMonth.year, _focusedMonth.month + 1, 0).day;
                   billDueDateInFocusedMonth = DateTime.utc(_focusedMonth.year, _focusedMonth.month, lastDayOfMonth);
                   print("Dia de vencimento ($dayOfMonth) inválido para o mês ${_focusedMonth.month}, usando o último dia: $lastDayOfMonth");
                 }
 
-
                 if (todayNormalized.isAfter(billDueDateInFocusedMonth)) {
                   isOverdue = true;
-                  titleColor = Colors.redAccent; // Cor para vencido e não pago
+                  titleColor = Colors.redAccent;
                   dayLabelColor = Colors.redAccent;
                   dayBackgroundColor = Colors.redAccent.withOpacity(0.15);
                 }
-              } else { // Se estiver pago
+              } else {
                 titleColor = Colors.grey[600]!;
                 dayLabelColor = Colors.grey[600]!;
                 dayBackgroundColor = Colors.grey.shade800;
               }
-              // --- FIM DA LÓGICA DE DATA VENCIDA ---
 
               return Card(
-                margin: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
                 child: InkWell(
                   onTap: () => _toggleBillPaidStatus(billId, _focusedMonth),
                   borderRadius: BorderRadius.circular(12),
@@ -1626,17 +1646,15 @@ class _BillsPageState extends State<BillsPage> {
                         onChanged: (bool? value) => _toggleBillPaidStatus(billId, _focusedMonth),
                         visualDensity: VisualDensity.compact,
                         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        // Muda a cor do checkbox se estiver vencido e não pago
-                        activeColor: isOverdue ? Colors.redAccent : Theme.of(context).colorScheme.primary,
-                        checkColor: isOverdue ? Colors.white : Colors.black, // Cor do "check"
-                        side: isOverdue && !isPaid ? BorderSide(color: Colors.redAccent) : BorderSide(color: Colors.white54),
-
+                        activeColor: isOverdue && !isPaid ? Colors.redAccent : Theme.of(context).colorScheme.primary,
+                        checkColor: Colors.black,
+                        side: isOverdue && !isPaid ? const BorderSide(color: Colors.redAccent) : const BorderSide(color: Colors.white54),
                       ),
-                      SizedBox(width: 10),
+                      const SizedBox(width: 10),
                       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         Text(title, style: TextStyle(
                             decoration: isPaid ? TextDecoration.lineThrough : TextDecoration.none,
-                            color: titleColor, // Aplicando a cor dinâmica
+                            color: titleColor,
                             fontSize: 17, fontWeight: FontWeight.w500
                         ), overflow: TextOverflow.ellipsis),
                         if (notes.isNotEmpty)
@@ -1649,14 +1667,14 @@ class _BillsPageState extends State<BillsPage> {
                             ), maxLines: 1, overflow: TextOverflow.ellipsis),
                           ),
                       ])),
-                      SizedBox(width: 8),
+                      const SizedBox(width: 8),
                       Container(
-                        padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                            color: dayBackgroundColor, // Aplicando a cor de fundo dinâmica
+                            color: dayBackgroundColor,
                             borderRadius: BorderRadius.circular(6)),
                         child: Text("Dia $dayOfMonth", style: TextStyle(
-                            color: dayLabelColor, // Aplicando a cor da label dinâmica
+                            color: dayLabelColor,
                             fontSize: 14, fontWeight: FontWeight.w500
                         )),
                       ),
@@ -1668,6 +1686,229 @@ class _BillsPageState extends State<BillsPage> {
           ),
         ),
       ]),
+    );
+  }
+}
+
+// --- Página de Informações (Sobre) ---
+class InfoPage extends StatefulWidget {
+  const InfoPage({super.key});
+
+  @override
+  _InfoPageState createState() => _InfoPageState();
+}
+
+enum UpdateStatus { checking, upToDate, available, error }
+
+class _InfoPageState extends State<InfoPage> {
+  String _appVersion = 'Carregando...';
+  UpdateStatus _updateStatus = UpdateStatus.checking;
+  UpdateInfo? _updateInfo;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadVersionInfo();
+    _runUpdateCheck();
+  }
+
+  Future<void> _loadVersionInfo() async {
+    final packageInfo = await PackageInfo.fromPlatform();
+    if (mounted) {
+      setState(() {
+        _appVersion = 'v${packageInfo.version}+${packageInfo.buildNumber}';
+      });
+    }
+  }
+
+  Future<void> _runUpdateCheck() async {
+    // Garante que o estado de 'checking' seja exibido
+    if(mounted) {
+      setState(() {
+        _updateStatus = UpdateStatus.checking;
+      });
+    }
+
+    try {
+      final updateInfo = await updateService.checkForUpdate();
+      if (mounted) {
+        setState(() {
+          if (updateInfo != null) {
+            _updateStatus = UpdateStatus.available;
+            _updateInfo = updateInfo;
+          } else {
+            _updateStatus = UpdateStatus.upToDate;
+          }
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _updateStatus = UpdateStatus.error;
+        });
+      }
+    }
+  }
+
+  // Widget que constrói a mensagem de status da atualização
+  Widget _buildUpdateStatusWidget() {
+    switch (_updateStatus) {
+      case UpdateStatus.checking:
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+            const SizedBox(width: 10),
+            Text('Verificando atualizações...', style: Theme.of(context).textTheme.bodyMedium),
+          ],
+        );
+      case UpdateStatus.upToDate:
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.check_circle, color: Colors.green, size: 18),
+            const SizedBox(width: 8),
+            Text('Você está com a versão mais recente.', style: Theme.of(context).textTheme.bodyMedium),
+          ],
+        );
+      case UpdateStatus.error:
+        return GestureDetector(
+          onTap: _runUpdateCheck, // Permite tentar novamente
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error, color: Colors.orange, size: 18),
+              const SizedBox(width: 8),
+              Text('Erro ao verificar. Toque para tentar novamente.', style: Theme.of(context).textTheme.bodyMedium),
+            ],
+          ),
+        );
+      case UpdateStatus.available:
+        return GestureDetector(
+          onTap: () {
+            if (_updateInfo != null) {
+              updateService.showUpdateDialog(context, _updateInfo!);
+            }
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.system_update_alt_rounded, color: Theme.of(context).colorScheme.primary, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'Nova atualização disponível! Toque para atualizar.',
+                  style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+          ),
+        );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Sobre o Plantão Operacional'),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(20.0),
+        children: <Widget>[
+          Center(
+            child: CircleAvatar(
+              radius: 50,
+              backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.2),
+              child: Icon(
+                Icons.calendar_month_rounded,
+                size: 50,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ),
+          ),
+          const SizedBox(height: 15),
+          Center(
+            child: Text(
+              'Plantão Operacional',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+          ),
+          Center(
+            child: Text(
+              _appVersion,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ),
+
+          // --- INÍCIO DA CORREÇÃO ---
+          // A chamada para o widget de status estava faltando aqui.
+          const SizedBox(height: 10),
+          _buildUpdateStatusWidget(),
+          const SizedBox(height: 10),
+          // --- FIM DA CORREÇÃO ---
+
+          const Divider(color: Colors.white24),
+          const SizedBox(height: 10),
+
+          Text(
+            'Objetivo do Aplicativo',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'O Plantão Operacional foi criado para ser seu assistente pessoal, simplificando a organização de plantões, turnos de trabalho, compromissos e o controle de contas a pagar em uma interface visual e fácil de usar.',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 20),
+          const Divider(color: Colors.white24),
+          const SizedBox(height: 10),
+
+          Text(
+            'Desenvolvimento',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: 10),
+
+          const ListTile(
+            leading: Icon(Icons.calendar_today_rounded),
+            title: Text('Data da Criação'),
+            subtitle: Text('Junho de 2025'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.email_outlined),
+            title: const Text('Contato do Desenvolvedor'),
+            subtitle: const Text('davidmp2015@gmail.com'),
+            onTap: () => launchURL('mailto:davidmp2015@gmail.com?subject=Contato sobre o App Plantão Operacional', context: context),
+          ),
+          ListTile(
+            leading: const Icon(Icons.code),
+            title: const Text('Código Fonte (GitHub)'),
+            subtitle: const Text('github.com/davidmp24/Plantao-Operacional'),
+            onTap: () => launchURL('https://github.com/davidmp24/Plantao-Operacional', context: context),
+          ),
+          ListTile(
+            leading: SizedBox(
+              width: 24,
+              height: 24,
+              child: Center(
+                child: Text(
+                  'X',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).iconTheme.color,
+                  ),
+                ),
+              ),
+            ),
+            title: const Text('X (antigo Twitter)'),
+            subtitle: const Text('@DavidMPrado'),
+            onTap: () => launchURL('https://x.com/DavidMPrado', context: context),
+          ),
+        ],
+      ),
     );
   }
 }
