@@ -53,7 +53,7 @@ class UpdateService {
       return null;
     } catch (e) {
       print("Erro ao verificar atualização: $e");
-      rethrow;
+      return null; // Não propaga o erro — rede pode falhar no startup
     }
   }
 

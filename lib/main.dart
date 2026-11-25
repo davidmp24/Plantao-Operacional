@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:collection/collection.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,12 +14,21 @@ import 'package:http/http.dart' as http;
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:provider/provider.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 
 import 'backup_helper_mobile.dart' if (dart.library.html) 'backup_helper_web.dart';
 import 'update_service.dart';
+import 'firebase_options.dart';
+import 'services/auth_service.dart';
+import 'services/bill_service.dart';
+import 'services/sharing_service.dart';
+import 'services/widget_service.dart';
+import 'services/notification_service.dart';
+import 'screens/login_screen.dart';
+import 'screens/home_screen.dart';
 
 // --- Instância Global do Serviço de Atualização ---
 final updateService = UpdateService();
@@ -82,13 +92,41 @@ class Holiday {
 // --- Main Function & App Initialization ---
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Hive.initFlutter();
-  await Hive.openBox('commitments');
-  await Hive.openBox('templates');
-  await Hive.openBox('bills_templates');
-  await Hive.openBox('bills_paid_status');
-  await initializeDateFormatting('pt_BR', null);
-  runApp(const MyApp());
+  try {
+    await initializeDateFormatting('pt_BR', null);
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    await Hive.initFlutter();
+    // Tratamento seguro para boxes do Hive (evita crash por corrupção em Xiaomi/Redmi)
+    final boxes = ['commitments', 'templates', 'bills_templates', 'bills_paid_status', 'settings'];
+    for (var boxName in boxes) {
+      try {
+        await Hive.openBox(boxName);
+      } catch (e) {
+        await Hive.deleteBoxFromDisk(boxName);
+        await Hive.openBox(boxName);
+      }
+    }
+    await WidgetService.initialize();
+    await NotificationService().init();
+    runApp(const MyApp());
+  } catch (e, stack) {
+    runApp(MaterialApp(
+      home: Scaffold(
+        backgroundColor: Colors.red,
+        body: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Text(
+              'Erro Crítico na Inicialização:\n\n$e\n\n$stack',
+              style: const TextStyle(color: Colors.white, fontSize: 14),
+            ),
+          ),
+        ),
+      ),
+    ));
+  }
 }
 
 // --- Root Application Widget ---
@@ -97,60 +135,100 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'Plantão Operacional',
-      localizationsDelegates: const [
-        GlobalMaterialLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => AuthService()),
+        ChangeNotifierProvider(create: (_) => BillService()),
+        ChangeNotifierProxyProvider<AuthService, SharingService>(
+          create: (ctx) => SharingService(ctx.read<AuthService>()),
+          update: (ctx, auth, prev) => prev ?? SharingService(auth),
+        ),
       ],
-      supportedLocales: const [ Locale('pt', 'BR'), ],
-      locale: const Locale('pt', 'BR'),
-      theme: ThemeData.dark().copyWith(
-          scaffoldBackgroundColor: const Color(0xFF1E1E1E),
-          primaryColor: const Color(0xFF10A37F),
-          appBarTheme: const AppBarTheme( backgroundColor: Color(0xFF262626), foregroundColor: Colors.white,),
-          textTheme: const TextTheme(
-            bodyMedium: TextStyle(fontSize: 15, color: Colors.white70),
-            bodyLarge: TextStyle(fontSize: 17, fontWeight: FontWeight.w500, color: Colors.white),
-            headlineSmall: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
-            titleMedium: TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: Colors.white),
-            titleLarge: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
-          ),
-          colorScheme: const ColorScheme.dark(
-            primary: Color(0xFF10A37F), secondary: Color(0xFF10A37F), surface: Color(0xFF2C2C2C),
-            background: Color(0xFF1E1E1E), onPrimary: Colors.white, onSecondary: Colors.white,
-            onSurface: Colors.white, onBackground: Colors.white, error: Colors.redAccent, onError: Colors.white,
-          ),
-          floatingActionButtonTheme: const FloatingActionButtonThemeData( backgroundColor: Color(0xFF10A37F), foregroundColor: Colors.white,),
-          popupMenuTheme: const PopupMenuThemeData( color: Color(0xFF2C2C2C), textStyle: TextStyle(color: Colors.white),),
-          dialogTheme: const DialogThemeData(
-            backgroundColor: Color(0xFF2C2C2C),
-            titleTextStyle: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-            contentTextStyle: TextStyle(color: Colors.white70, fontSize: 16),
-          ),
-          textButtonTheme: TextButtonThemeData( style: TextButton.styleFrom(foregroundColor: const Color(0xFF10A37F)),),
-          cardTheme: CardThemeData(
-            color: const Color(0xFF2C2C2C), elevation: 2,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
-          ),
-          inputDecorationTheme: InputDecorationTheme(
-            border: OutlineInputBorder( borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey[700]!),),
-            enabledBorder: OutlineInputBorder( borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey[700]!),),
-            focusedBorder: OutlineInputBorder( borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF10A37F)),),
-            labelStyle: TextStyle(color: Colors.grey[400]), hintStyle: TextStyle(color: Colors.grey[600]),
-          ),
-          iconTheme: const IconThemeData( color: Colors.white70, ),
-          checkboxTheme: CheckboxThemeData(
-            fillColor: MaterialStateProperty.resolveWith((states) { if (states.contains(MaterialState.selected)) { return const Color(0xFF10A37F); } return Colors.grey[800]; }),
-            checkColor: MaterialStateProperty.all(Colors.black), side: const BorderSide(color: Colors.white54),
-          ),
-          dividerTheme: const DividerThemeData( color: Colors.white24, thickness: 1, space: 1,)
+      child: MaterialApp(
+        debugShowCheckedModeBanner: false,
+        title: 'Plantão Operacional',
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        supportedLocales: const [ Locale('pt', 'BR'), ],
+        locale: const Locale('pt', 'BR'),
+        theme: ThemeData.dark().copyWith(
+            scaffoldBackgroundColor: const Color(0xFF1E1E1E),
+            primaryColor: const Color(0xFF10A37F),
+            appBarTheme: const AppBarTheme( backgroundColor: Color(0xFF262626), foregroundColor: Colors.white,),
+            textTheme: const TextTheme(
+              bodyMedium: TextStyle(fontSize: 15, color: Colors.white70),
+              bodyLarge: TextStyle(fontSize: 17, fontWeight: FontWeight.w500, color: Colors.white),
+              headlineSmall: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white),
+              titleMedium: TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: Colors.white),
+              titleLarge: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+            ),
+            colorScheme: const ColorScheme.dark(
+              primary: Color(0xFF10A37F), secondary: Color(0xFF10A37F), surface: Color(0xFF2C2C2C),
+              background: Color(0xFF1E1E1E), onPrimary: Colors.white, onSecondary: Colors.white,
+              onSurface: Colors.white, onBackground: Colors.white, error: Colors.redAccent, onError: Colors.white,
+            ),
+            floatingActionButtonTheme: const FloatingActionButtonThemeData( backgroundColor: Color(0xFF10A37F), foregroundColor: Colors.white,),
+            popupMenuTheme: const PopupMenuThemeData( color: Color(0xFF2C2C2C), textStyle: TextStyle(color: Colors.white),),
+            dialogTheme: const DialogThemeData(
+              backgroundColor: Color(0xFF2C2C2C),
+              titleTextStyle: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+              contentTextStyle: TextStyle(color: Colors.white70, fontSize: 16),
+            ),
+            textButtonTheme: TextButtonThemeData( style: TextButton.styleFrom(foregroundColor: const Color(0xFF10A37F)),),
+            cardTheme: CardThemeData(
+              color: const Color(0xFF2C2C2C), elevation: 2,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+            ),
+            inputDecorationTheme: InputDecorationTheme(
+              border: OutlineInputBorder( borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey[700]!),),
+              enabledBorder: OutlineInputBorder( borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: Colors.grey[700]!),),
+              focusedBorder: OutlineInputBorder( borderRadius: BorderRadius.circular(8), borderSide: const BorderSide(color: Color(0xFF10A37F)),),
+              labelStyle: TextStyle(color: Colors.grey[400]), hintStyle: TextStyle(color: Colors.grey[600]),
+            ),
+            iconTheme: const IconThemeData( color: Colors.white70, ),
+            checkboxTheme: CheckboxThemeData(
+              fillColor: MaterialStateProperty.resolveWith((states) { if (states.contains(MaterialState.selected)) { return const Color(0xFF10A37F); } return Colors.grey[800]; }),
+              checkColor: MaterialStateProperty.all(Colors.black), side: const BorderSide(color: Colors.white54),
+            ),
+            dividerTheme: const DividerThemeData( color: Colors.white24, thickness: 1, space: 1,)
+        ),
+        home: const _AppRoot(),
       ),
-      home: const WeeklyViewPage(),
     );
+  }
+}
+
+// --- Roteamento baseado em autenticação ---
+class _AppRoot extends StatelessWidget {
+  const _AppRoot();
+
+  @override
+  Widget build(BuildContext context) {
+    final auth = context.watch<AuthService>();
+    if (auth.isInitializing) {
+      return const Scaffold(
+        backgroundColor: Color(0xFF1A1A2E),
+        body: Center(
+          child: CircularProgressIndicator(color: Color(0xFF10A37F)),
+        ),
+      );
+    }
+    if (auth.isSignedIn) {
+      return HomeScreen(agendaTab: _AgendaWrapper());
+    }
+    return const LoginScreen();
+  }
+}
+
+// Wrapper para WeeklyViewPage dentro do HomeScreen
+class _AgendaWrapper extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return const WeeklyViewPage();
   }
 }
 
@@ -179,6 +257,13 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
   bool _isLoadingHolidays = false;
   Set<DateTime> _holidayDates = {};
 
+  // --- Compartilhamento ---
+  // Eventos do usuário seguido para o mês atual
+  List<Map<String, dynamic>> _followedEvents = [];
+  // subscription para Stream do Firestore
+  dynamic _followedStreamSub;
+  bool _isRefreshingShared = false;
+
   bool _isPerformingBackupRestore = false;
   bool _hasPendingBills = false;
   AnimationController? _pendingBillsAnimationController;
@@ -197,6 +282,15 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
     _selectedCommitments = ValueNotifier([]);
     _loadAllData();
     _fetchHolidaysForYear(_focusedDay.year);
+    // Inicia escuta dos eventos do seguido
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _subscribeToFollowedEvents();
+      // Sincroniza todos os compromissos locais existentes no Firestore
+      // (para que quem já segue o usuário veja eventos anteriores ao compartilhamento)
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _syncLocalToFirestore();
+      });
+    });
 
     // MUDANÇA: Agora chama o serviço da maneira correta.
     WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -230,6 +324,7 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
   void dispose() {
     _selectedCommitments.dispose();
     _pendingBillsAnimationController?.dispose();
+    _followedStreamSub?.cancel();
     super.dispose();
   }
 
@@ -283,7 +378,121 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
     _updateHolidayDatesSet();
     _updateSelectedCommitments();
     _checkPendingBillsForMonth(_focusedDay);
+    WidgetService.updateTodayWidget();
     print("Dados iniciais da WeeklyView carregados/recarregados.");
+  }
+
+  // ─── Compartilhamento ─────────────────────────────────────────────────────
+
+  /// Inicia/reinicia a escuta em tempo real dos eventos do usuário seguido.
+  void _subscribeToFollowedEvents() {
+    _followedStreamSub?.cancel();
+    final sharing = context.read<SharingService>();
+    if (sharing.followedProfiles.isEmpty) {
+      if (mounted) setState(() => _followedEvents = []);
+      return;
+    }
+    // Segue apenas o primeiro usuário da lista (pode ser expandido)
+    final firstUid = sharing.followedProfiles.first.uid;
+    _followedStreamSub = sharing
+        .getCommitmentsStream(firstUid, _focusedDay)
+        .listen((commitments) {
+      if (!mounted) return;
+      setState(() {
+        _followedEvents = commitments.map((c) {
+          final dateKey = getDateKey(DateTime(c.date.year, c.date.month, c.date.day));
+          return {
+            'title': c.title,
+            'hour': c.hour,
+            'notes': c.notes,
+            'color': c.colorValue,
+            'isShared': true,
+            'ownerName': c.ownerName,
+            '_dateKey': dateKey,
+          };
+        }).toList();
+        _updateSelectedCommitments();
+      });
+    });
+  }
+
+  /// Força refresh dos eventos do seguido (botão 🔄).
+  Future<void> _refreshFollowedEvents() async {
+    if (_isRefreshingShared || !mounted) return;
+    setState(() => _isRefreshingShared = true);
+    _subscribeToFollowedEvents();
+    await Future.delayed(const Duration(seconds: 1));
+    if (mounted) setState(() => _isRefreshingShared = false);
+  }
+
+  /// Auto-sync: publica um compromisso local no Firestore (fire-and-forget).
+  void _autoSync(DateTime date, Map<String, dynamic> commitment) {
+    final auth = context.read<AuthService>();
+    if (!auth.isSignedIn) return;
+    final sharing = context.read<SharingService>();
+    sharing.publishCommitment(
+      date: date,
+      title: commitment['title'] ?? '',
+      hour: commitment['hour'] ?? '',
+      notes: commitment['notes'] ?? '',
+      colorValue: commitment['color'] ?? const Color(0xFF10A37F).value,
+    ).then((ok) {
+      if (!ok) debugPrint('Auto-sync falhou silenciosamente.');
+    }).catchError((e) {
+      debugPrint('Auto-sync erro: $e');
+    });
+  }
+
+  /// Publica em lote todos os compromissos do Hive no Firestore (roda uma vez por sessão).
+  /// Garante que eventos criados antes do compartilhamento fiquem visíveis para seguidores.
+  bool _didSyncOnce = false;
+  Future<void> _syncLocalToFirestore() async {
+    if (_didSyncOnce) return;
+    final auth = context.read<AuthService>();
+    if (!auth.isSignedIn) return;
+    _didSyncOnce = true;
+    final sharing = context.read<SharingService>();
+    // Aguarda o perfil estar pronto (pode ser necessário um pequeno delay pós-login)
+    if (sharing.myProfile == null) {
+      await Future.delayed(const Duration(seconds: 2));
+      if (!mounted) return;
+    }
+    final Map<String, List<dynamic>> snapshot = {};
+    _commitmentsBox.toMap().forEach((key, value) {
+      if (value is List && key is String) {
+        snapshot[key] = List<dynamic>.from(value);
+      }
+    });
+    await sharing.syncAllCommitments(snapshot);
+  }
+
+  /// Agenda notificação de lembrete para um compromisso (se tiver horário).
+  void _scheduleNotification(DateTime date, Map<String, dynamic> commitment) {
+    final hour = commitment['hour'] as String? ?? '';
+    if (hour.isEmpty) return;
+    final id = NotificationService.makeId(
+      getDateKey(date),
+      commitment['title'] ?? '',
+      hour,
+    );
+    NotificationService().scheduleCommitmentNotification(
+      id: id,
+      title: commitment['title'] ?? 'Compromisso',
+      hour: hour,
+      date: date,
+      notes: commitment['notes'],
+    );
+  }
+
+  /// Cancela notificação de um compromisso removido.
+  void _cancelNotification(DateTime date, Map<String, dynamic> commitment) {
+    final hour = commitment['hour'] as String? ?? '';
+    final id = NotificationService.makeId(
+      getDateKey(date),
+      commitment['title'] ?? '',
+      hour,
+    );
+    NotificationService().cancelNotification(id);
   }
 
   void _loadAllCommitments() {
@@ -300,6 +509,12 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
   List<dynamic> _getCommitmentsForDay(DateTime day) {
     final key = getDateKey(normalizeDate(day));
     return List<dynamic>.from(_allCommitments[key] ?? []);
+  }
+
+  /// Retorna os eventos do usuário seguido para um dia específico.
+  List<Map<String, dynamic>> _getFollowedEventsForDay(DateTime day) {
+    final key = getDateKey(normalizeDate(day));
+    return _followedEvents.where((e) => e['_dateKey'] == key).toList();
   }
 
   List<Holiday> _getHolidaysForDay(DateTime day) {
@@ -319,6 +534,20 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
       'title': h.localName, 'isHoliday': true, 'notes': h.name,
       'hour': '', 'color': Colors.transparent.value
     }));
+    // Adiciona eventos do usuário seguido para o dia selecionado (sem duplicar)
+    final selKey = getDateKey(_selectedDate);
+    final sharedForDay = _followedEvents.where((e) {
+      return e['_dateKey'] == selKey;
+    }).toList();
+    for (final shared in sharedForDay) {
+      final isDuplicate = combined.any((local) =>
+        local is Map &&
+        local['title'] == shared['title'] &&
+        local['hour'] == shared['hour'] &&
+        local['isShared'] != true);
+      if (!isDuplicate) combined.add(shared);
+    }
+
     combined.sort((a, b) {
       final aMap = a is Map ? a : <String, dynamic>{};
       final bMap = b is Map ? b : <String, dynamic>{};
@@ -377,10 +606,12 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
     final dateKey = getDateKey(normalizedDate);
     List<dynamic> existing = List<dynamic>.from(_commitmentsBox.get(dateKey, defaultValue: []));
     final isDayOff = existing.any((e) => e is Map && e['title'] == 'Folga');
+    final folgaMap = {'title': 'Folga', 'color': Colors.grey.value, 'hour': '', 'notes': ''};
     if (isDayOff) {
       existing.removeWhere((e) => e is Map && e['title'] == 'Folga');
     } else {
-      existing.add({'title': 'Folga', 'color': Colors.grey.value, 'hour': '', 'notes': ''});
+      existing.add(folgaMap);
+      _autoSync(normalizedDate, folgaMap);
     }
     await _commitmentsBox.put(dateKey, existing);
     _loadAllData();
@@ -458,6 +689,9 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
       hiveItem is Map && hiveItem['title'] == item['title'] && hiveItem['hour'] == item['hour'] &&
           hiveItem['notes'] == item['notes'] && hiveItem['color'] == item['color']);
       await _commitmentsBox.put(dateKey, actualCommitments);
+      // Cancela a notificação do compromisso removido
+      _cancelNotification(_selectedDate, Map<String, dynamic>.from(item));
+      WidgetService.updateTodayWidget();
       _loadAllData();
     }
   }
@@ -617,10 +851,12 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
   Widget _buildCellContent(DateTime day, DateTime focusedDay, {required bool isToday, required bool isSelected, required bool isOutside}) {
     final normalizedDay = normalizeDate(day);
     final commitments = _getCommitmentsForDay(normalizedDay).where((c) => c is Map && c['isHoliday'] != true).toList();
+    final followedForDay = _getFollowedEventsForDay(normalizedDay);
+    final allDayEvents = [...commitments, ...followedForDay];
     final bool isHoliday = _holidayDates.contains(normalizedDay);
-    final List<Color> uniqueCommitmentColors = commitments
-        .where((c) => c['title'] != 'Folga')
-        .map((c) => (c['color'] is int) ? Color(c['color']) : null)
+    final List<Color> uniqueCommitmentColors = allDayEvents
+        .where((c) => c is Map && c['title'] != 'Folga')
+        .map((c) => (c['color'] is int) ? Color(c['color'] as int) : null)
         .whereType<Color>().toSet().take(4).toList();
     final bool isMultiSelected = _selectionMode == SelectionMode.multi && _multiSelectedDays.contains(normalizedDay);
 
@@ -667,30 +903,112 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
     final MaterialLocalizations localizations = MaterialLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: Text(_selectionMode == SelectionMode.multi ? 'Seleção Múltipla (${_multiSelectedDays.length})' : 'Agenda Mensal'),
+        title: Text(_selectionMode == SelectionMode.multi
+            ? 'Seleção Múltipla (${_multiSelectedDays.length})'
+            : 'Agenda Mensal'),
         actions: [
+          // Botão: Seleção Única
           IconButton(
             icon: const Icon(Icons.crop_square), tooltip: 'Seleção Única',
             color: _selectionMode == SelectionMode.single ? Theme.of(context).colorScheme.primary : Colors.white54,
             onPressed: () {
               if (_selectionMode != SelectionMode.single) {
                 setState(() {
-                  _selectionMode = SelectionMode.single; _multiSelectedDays.clear();
-                  _selectedDate = normalizeDate(_focusedDay); _updateSelectedCommitments();
+                  _selectionMode = SelectionMode.single;
+                  _multiSelectedDays.clear();
+                  _selectedDate = normalizeDate(_focusedDay);
+                  _updateSelectedCommitments();
                 });
               }
             },
           ),
+          // Botão: Seleção Múltipla
           IconButton(
             icon: const Icon(Icons.select_all), tooltip: 'Seleção Múltipla',
             color: _selectionMode == SelectionMode.multi ? Theme.of(context).colorScheme.primary : Colors.white54,
             onPressed: () {
               if (_selectionMode != SelectionMode.multi) {
                 setState(() {
-                  _selectionMode = SelectionMode.multi; _multiSelectedDays.clear();
+                  _selectionMode = SelectionMode.multi;
+                  _multiSelectedDays.clear();
                   _multiSelectedDays.add(_selectedDate);
                 });
               }
+            },
+          ),
+          // Botão: Refresh dos eventos do seguido
+          Consumer<SharingService>(
+            builder: (ctx, sharing, _) {
+              if (sharing.followedProfiles.isEmpty) return const SizedBox.shrink();
+              return IconButton(
+                icon: _isRefreshingShared
+                    ? const SizedBox(
+                        width: 18, height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70))
+                    : const Icon(Icons.sync_rounded),
+                tooltip: 'Atualizar agenda compartilhada',
+                color: const Color(0xFF10A37F),
+                onPressed: _refreshFollowedEvents,
+              );
+            },
+          ),
+          // Botão: Menu de Compartilhamento
+          Consumer<SharingService>(
+            builder: (ctx, sharing, _) {
+              return PopupMenuButton<String>(
+                icon: const Icon(Icons.people_alt_outlined, color: Colors.white70),
+                tooltip: 'Compartilhamento',
+                color: Theme.of(context).popupMenuTheme.color,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                itemBuilder: (_) => [
+                  // Meu código
+                  PopupMenuItem(
+                    value: 'my_code',
+                    child: ListTile(
+                      leading: const Icon(Icons.qr_code_rounded, color: Color(0xFF10A37F)),
+                      title: const Text('Meu Código de Compartilhamento'),
+                      subtitle: sharing.myShareCode.isNotEmpty
+                          ? Text(sharing.myShareCode,
+                              style: const TextStyle(
+                                  fontSize: 18, letterSpacing: 4, fontWeight: FontWeight.bold, color: Color(0xFF10A37F)))
+                          : const Text('Carregando...'),
+                    ),
+                  ),
+                  const PopupMenuDivider(),
+                  // Seguir usuário
+                  const PopupMenuItem(
+                    value: 'follow',
+                    child: ListTile(
+                      leading: Icon(Icons.person_add_alt_1_rounded, color: Colors.white70),
+                      title: Text('Seguir Usuário'),
+                      subtitle: Text('Insira o código de 8 dígitos'),
+                    ),
+                  ),
+                  // Lista de seguidos
+                  if (sharing.followedProfiles.isNotEmpty) ...[
+                    const PopupMenuDivider(),
+                    ...sharing.followedProfiles.map((p) => PopupMenuItem(
+                      value: 'unfollow_${p.uid}',
+                      child: ListTile(
+                        leading: const Icon(Icons.person_remove_outlined, color: Colors.redAccent),
+                        title: Text('Deixar de seguir'),
+                        subtitle: Text(p.displayName),
+                      ),
+                    )),
+                  ],
+                ],
+                onSelected: (value) async {
+                  if (value == 'my_code') {
+                    await _showMyCodeDialog(sharing.myShareCode);
+                  } else if (value == 'follow') {
+                    await _showFollowDialog(sharing);
+                  } else if (value.startsWith('unfollow_')) {
+                    final uid = value.replaceFirst('unfollow_', '');
+                    await sharing.unfollow(uid);
+                    _subscribeToFollowedEvents();
+                  }
+                },
+              );
             },
           ),
         ],
@@ -734,11 +1052,13 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
                     _updateSelectedCommitments();
                     _checkPendingBillsForMonth(this._focusedDay);
                   });
+                  // Recria o stream do seguido com o novo mês
+                  _subscribeToFollowedEvents();
                 }
               },
               eventLoader: (day) {
                 final normDay = normalizeDate(day);
-                return [..._getCommitmentsForDay(normDay), ..._getHolidaysForDay(normDay)];
+                return [..._getCommitmentsForDay(normDay), ..._getFollowedEventsForDay(normDay), ..._getHolidaysForDay(normDay)];
               },
               calendarFormat: CalendarFormat.month,
               startingDayOfWeek: StartingDayOfWeek.monday,
@@ -826,6 +1146,8 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
                       final notes = item['notes'] as String? ?? '';
                       final hour = item['hour'] as String? ?? '';
                       final isDayOff = !isHolidayItem && title == 'Folga';
+                      final isShared = item['isShared'] == true;
+                      final ownerName = item['ownerName'] as String? ?? '';
                       Color itemColor = Colors.transparent;
                       Widget? leadingIcon;
 
@@ -835,10 +1157,19 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
                       } else if (isDayOff) {
                         itemColor = Color(item['color'] as int? ?? Colors.grey.value);
                         leadingIcon = const Icon(Icons.free_breakfast_outlined, size: 20, color: Colors.white70);
+                      } else if (isShared) {
+                        itemColor = Color(item['color'] as int? ?? Colors.orange.value);
+                        leadingIcon = const Icon(Icons.people_rounded, size: 20, color: Colors.white);
                       } else {
                         itemColor = Color(item['color'] as int? ?? Theme.of(context).colorScheme.primary.value);
                       }
                       return Card(
+                        // Borda sutil para eventos compartilhados
+                        shape: isShared
+                            ? RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                side: const BorderSide(color: Color(0xFFFF9800), width: 1.2))
+                            : null,
                         child: ListTile(
                           leading: CircleAvatar(backgroundColor: itemColor, child: leadingIcon),
                           title: Text(
@@ -849,10 +1180,19 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
                               fontStyle: isHolidayItem ? FontStyle.italic : FontStyle.normal,
                             ),
                           ),
-                          subtitle: notes.isNotEmpty && !isHolidayItem
-                              ? Text(notes, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: isDayOff ? Colors.grey[600] : Colors.white70))
-                              : null,
-                          trailing: (!isHolidayItem && _selectionMode == SelectionMode.single)
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (notes.isNotEmpty && !isHolidayItem)
+                                Text(notes, style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                    color: isDayOff ? Colors.grey[600] : Colors.white70)),
+                              if (isShared && ownerName.isNotEmpty)
+                                Text('\ud83d\udc65 $ownerName',
+                                    style: const TextStyle(fontSize: 11, color: Color(0xFFFF9800))),
+                            ],
+                          ),
+                          trailing: (!isHolidayItem && !isShared && _selectionMode == SelectionMode.single)
                               ? Row(mainAxisSize: MainAxisSize.min, children: [
                             if (!isDayOff)
                               IconButton(
@@ -973,6 +1313,8 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
             items.add(const PopupMenuDivider());
             items.add(PopupMenuItem(value: 'backup_local', child: ListTile(leading: Icon(Icons.save_alt, color: Theme.of(context).iconTheme.color), title: const Text('Backup Local'))));
             items.add(PopupMenuItem(value: 'restore_local', child: ListTile(leading: Icon(Icons.restore_from_trash_outlined, color: Theme.of(context).iconTheme.color), title: const Text('Restaurar Local'))));
+            items.add(const PopupMenuDivider());
+            items.add(const PopupMenuItem(value: 'logout', child: ListTile(leading: Icon(Icons.logout_rounded, color: Colors.redAccent), title: Text('Sair da Conta', style: TextStyle(color: Colors.redAccent)))));
             return items;
           },
           onSelected: (value) async {
@@ -1009,8 +1351,164 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
                   _loadAllData();
                 }
               }
+            } else if (value == 'logout') {
+              final confirm = await showDialog<bool>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: const Text('Sair da Conta?'),
+                  content: const Text('Deseja desconectar sua conta Google?'),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      child: const Text('Sair', style: TextStyle(color: Colors.redAccent)),
+                    ),
+                  ],
+                ),
+              );
+              if (confirm == true && mounted) {
+                await context.read<AuthService>().signOut();
+              }
             }
           },
+        ),
+      ),
+    );
+  }
+  // ─── Dialogs de Compartilhamento ──────────────────────────────────────────
+
+  Future<void> _showMyCodeDialog(String code) async {
+    await showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(children: [
+          Icon(Icons.qr_code_rounded, color: Color(0xFF10A37F)),
+          SizedBox(width: 8),
+          Text('Meu Código'),
+        ]),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Compartilhe este código com quem deseja te seguir:',
+                textAlign: TextAlign.center, style: TextStyle(color: Colors.white70)),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1A1A2E),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFF10A37F), width: 1.5),
+              ),
+              child: Text(
+                code.isNotEmpty ? code : '...',
+                style: const TextStyle(
+                  fontSize: 26, letterSpacing: 8,
+                  fontWeight: FontWeight.bold, color: Color(0xFF10A37F),
+                  fontFamily: 'monospace',
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton.icon(
+            icon: const Icon(Icons.copy_rounded),
+            label: const Text('Copiar'),
+            onPressed: () {
+              if (code.isNotEmpty) {
+                Clipboard.setData(ClipboardData(text: code));
+                Navigator.pop(ctx);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('✅ Código copiado!'), duration: Duration(seconds: 2)),
+                );
+              }
+            },
+          ),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Fechar')),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showFollowDialog(SharingService sharing) async {
+    final controller = TextEditingController();
+    String? error;
+    bool isLoading = false;
+
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Row(children: [
+            Icon(Icons.person_add_alt_1_rounded, color: Color(0xFF10A37F)),
+            SizedBox(width: 8),
+            Text('Seguir Usuário'),
+          ]),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Insira o código de 8 caracteres do usuário:',
+                  style: TextStyle(color: Colors.white70)),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                autofocus: true,
+                maxLength: 8,
+                textCapitalization: TextCapitalization.characters,
+                decoration: InputDecoration(
+                  hintText: 'Ex: A3F9B2D1',
+                  errorText: error,
+                  prefixIcon: const Icon(Icons.tag_rounded),
+                ),
+                onChanged: (v) {
+                  if (error != null) setDialogState(() => error = null);
+                },
+              ),
+              if (isLoading) const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: LinearProgressIndicator(),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: isLoading ? null : () => Navigator.pop(ctx),
+              child: const Text('Cancelar'),
+            ),
+            TextButton(
+              onPressed: isLoading
+                  ? null
+                  : () async {
+                      final code = controller.text.trim().toUpperCase();
+                      if (code.length != 8) {
+                        setDialogState(() => error = 'O código deve ter 8 caracteres');
+                        return;
+                      }
+                      setDialogState(() { isLoading = true; error = null; });
+                      final result = await sharing.followByCode(code);
+                      if (!ctx.mounted) return;
+                      if (result.success) {
+                        Navigator.pop(ctx);
+                        _subscribeToFollowedEvents();
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('✅ Agora seguindo ${result.profile?.displayName ?? code}!'),
+                              backgroundColor: const Color(0xFF10A37F),
+                            ),
+                          );
+                        }
+                      } else {
+                        setDialogState(() {
+                          isLoading = false;
+                          error = result.errorMsg ?? 'Código não encontrado';
+                        });
+                      }
+                    },
+              child: const Text('Seguir'),
+            ),
+          ],
         ),
       ),
     );
@@ -1030,6 +1528,7 @@ class _TemplateSelectorPageState extends State<TemplateSelectorPage> {
   late Box _templatesBox;
   late Box _commitmentsBox;
   List<Map<String, dynamic>> templates = [];
+  bool _notifyMe = true;
 
   @override
   void initState() {
@@ -1062,8 +1561,50 @@ class _TemplateSelectorPageState extends State<TemplateSelectorPage> {
     if (widget.selectedDate != null) {
       final dateKey = getDateKey(widget.selectedDate!);
       final List<dynamic> dayCommitments = List<dynamic>.from(_commitmentsBox.get(dateKey, defaultValue: []));
-      dayCommitments.add(Map<String, dynamic>.from(template));
+      final commitmentMap = Map<String, dynamic>.from(template);
+      commitmentMap['notify'] = _notifyMe;
+      dayCommitments.add(commitmentMap);
       await _commitmentsBox.put(dateKey, dayCommitments);
+
+      // Auto-sync para o Firestore
+      try {
+        final auth = context.read<AuthService>();
+        final sharing = context.read<SharingService>();
+        if (auth.isSignedIn) {
+          sharing.publishCommitment(
+            date: widget.selectedDate!,
+            title: commitmentMap['title'] ?? '',
+            hour: commitmentMap['hour'] ?? '',
+            notes: commitmentMap['notes'] ?? '',
+            colorValue: commitmentMap['color'] ?? const Color(0xFF10A37F).value,
+          );
+        }
+      } catch (e) {
+        debugPrint('Auto-sync template: $e');
+      }
+
+      // Agenda notificação se o usuário optou por ser notificado
+      if (_notifyMe) {
+        try {
+          final hour = commitmentMap['hour'] as String? ?? '';
+          if (hour.isNotEmpty) {
+            final id = NotificationService.makeId(dateKey, commitmentMap['title'] ?? '', hour);
+            NotificationService().scheduleCommitmentNotification(
+              id: id,
+              title: commitmentMap['title'] ?? 'Compromisso',
+              hour: hour,
+              date: widget.selectedDate!,
+              notes: commitmentMap['notes'],
+            );
+          }
+        } catch (e) {
+          debugPrint('Schedule notification: $e');
+        }
+      }
+
+      // Atualiza o widget da tela inicial
+      WidgetService.updateTodayWidget();
+
       if (mounted) Navigator.pop(context, true);
     } else {
       if (mounted) Navigator.pop(context, template);
@@ -1111,7 +1652,16 @@ class _TemplateSelectorPageState extends State<TemplateSelectorPage> {
               ],
             ),
           ))
-          : ListView.builder(
+          : Column(children: [
+        if (widget.selectedDate != null)
+          SwitchListTile(
+            secondary: const Icon(Icons.notifications_active_outlined),
+            title: const Text('Notificar-me 30 min antes'),
+            value: _notifyMe,
+            onChanged: (v) => setState(() => _notifyMe = v),
+          ),
+        if (widget.selectedDate != null) const Divider(height: 1),
+        Expanded(child: ListView.builder(
         padding: const EdgeInsets.all(8),
         itemCount: templates.length,
         itemBuilder: (_, index) {
@@ -1129,7 +1679,8 @@ class _TemplateSelectorPageState extends State<TemplateSelectorPage> {
                 onTap: () => _handleTemplateSelection(Map<String, dynamic>.from(template)),
               ));
         },
-      ),
+      )),
+      ]),
     );
   }
 }

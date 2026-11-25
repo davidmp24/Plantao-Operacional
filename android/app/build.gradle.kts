@@ -3,6 +3,8 @@ plugins {
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+    // Google Services (Firebase)
+    id("com.google.gms.google-services")
 }
 
 // Importações necessárias para Properties e FileInputStream
@@ -19,11 +21,12 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace = "com.example.plantao"
+    namespace = "com.davidmp.plantao"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = "27.0.12077973" // <<< NDK ATUALIZADO AQUI
 
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
@@ -33,8 +36,8 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.plantao"
-        minSdk = flutter.minSdkVersion
+        applicationId = "com.davidmp.plantao"
+        minSdk = 23
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -61,7 +64,8 @@ android {
 
     buildTypes {
         getByName("release") {
-            signingConfig = signingConfigs.getByName("release")
+            // Como não vai pra Play Store, usa o debug signing config para manter o Google Sign-In funcionando
+            signingConfig = signingConfigs.getByName("debug")
             // Suas outras configurações de release (mantenha as que já tem, como minifyEnabled, etc.)
             // Exemplo:
             // isMinifyEnabled = true
@@ -75,5 +79,8 @@ flutter {
 }
 
 dependencies {
-    // Suas dependências aqui
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
+    // Força versão do WorkManager suportada por AGP < 8.6.0 para evitar erro de metadata
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
+    implementation("androidx.work:work-runtime:2.9.0")
 }

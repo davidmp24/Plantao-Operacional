@@ -1,4 +1,4 @@
-package com.example.plantao
+package com.davidmp.plantao
 
 import io.flutter.embedding.android.FlutterActivity
 

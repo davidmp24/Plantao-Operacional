@@ -1,0 +1,68 @@
+{
+  "project_info": {
+    "project_number": "685376697332",
+    "project_id": "calendario-familiar-9808f",
+    "storage_bucket": "calendario-familiar-9808f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:685376697332:android:f0099cf4bb2a0b5499bfa1",
+        "android_client_info": {
+          "package_name": "com.davidmp.plantao"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "685376697332-9v5gsn2s5tru0pcfgffrl8e86j64lcur.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC-2KFwfzunXa7JqGEtOEzsEx6PTeggJr4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "685376697332-9v5gsn2s5tru0pcfgffrl8e86j64lcur.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:685376697332:android:d42d530a4c2d5e8599bfa1",
+        "android_client_info": {
+          "package_name": "com.familia.calendario_familiar"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "685376697332-9v5gsn2s5tru0pcfgffrl8e86j64lcur.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC-2KFwfzunXa7JqGEtOEzsEx6PTeggJr4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "685376697332-9v5gsn2s5tru0pcfgffrl8e86j64lcur.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
