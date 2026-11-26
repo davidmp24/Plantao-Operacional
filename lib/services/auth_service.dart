@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:extension_google_sign_in_as_googleapis_auth/extension_google_sign_in_as_googleapis_auth.dart';
@@ -70,19 +71,45 @@ class AuthService extends ChangeNotifier {
     _errorMessage = null;
     notifyListeners();
     try {
-      final googleUser = await _googleSignIn
-          .signIn()
-          .timeout(const Duration(seconds: 15));
+      // Sem timeout na UI interativa do seletor de conta / senha / 2FA
+      final googleUser = await _googleSignIn.signIn();
       if (googleUser == null) return; // Usuário cancelou
       _googleUser = googleUser;
       await _signInToFirebase(googleUser)
-          .timeout(const Duration(seconds: 10));
+          .timeout(const Duration(seconds: 15));
+    } on PlatformException catch (e) {
+      final code = e.code.toLowerCase();
+      final msg = e.message ?? '';
+      if (code == 'sign_in_canceled' || code == 'sign_in_cancelled') {
+        _errorMessage = null;
+      } else if (code == 'network_error') {
+        _errorMessage =
+            'Erro de rede ao conectar com Google. Verifique sua internet ou VPN.';
+      } else if (msg.contains('10:') ||
+          msg.contains('ApiException: 10') ||
+          msg.contains('DEVELOPER_ERROR')) {
+        _errorMessage =
+            'Erro de configuração/assinatura no Firebase (ApiException: 10 / SHA-1 não registrado).';
+      } else {
+        _errorMessage =
+            'Falha no login Google [${e.code}]${msg.isNotEmpty ? ': $msg' : ''}';
+      }
+      debugPrint('Sign-in PlatformException [${e.code}]: $msg');
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'network-request-failed') {
+        _errorMessage =
+            'Erro de rede no Firebase Auth. Verifique sua internet ou VPN.';
+      } else {
+        _errorMessage =
+            'Erro de autenticação Firebase [${e.code}]${e.message != null ? ': ${e.message}' : ''}';
+      }
+      debugPrint('Sign-in FirebaseAuthException [${e.code}]: ${e.message}');
     } on TimeoutException {
       _errorMessage =
-          'Tempo esgotado ao conectar com Google. Verifique sua conexão ou VPN.';
+          'Tempo esgotado ao autenticar no Firebase. Verifique sua internet ou VPN.';
       debugPrint('Sign-in timeout');
     } catch (e) {
-      _errorMessage = 'Falha ao entrar com Google. Verifique sua rede ou VPN.';
+      _errorMessage = 'Erro ao entrar com Google: $e';
       debugPrint('Sign-in error: $e');
     } finally {
       _isLoading = false;

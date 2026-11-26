@@ -1,7 +1,7 @@
 {
-  "latestVersionName": "2.3.0",
-  "latestVersionCode": 23,
+  "latestVersionName": "2.3.1",
+  "latestVersionCode": 24,
   "releaseDate": "26/11/2026",
-  "apkUrl": "https://github.com/davidmp24/Plantao-Operacional/releases/download/v2.3.0/app-release.apk",
-  "releaseNotes": "O que há de novo nesta versão:\n- Abertura instantânea (0ms) mesmo com VPN ativa (Auth e Feriados Offline-First).\n- Sincronização completa de compromissos, turnos e exclusões com Cloud Firestore.\n- Melhorias visuais, estabilidade de memória e testes automatizados."
+  "apkUrl": "https://github.com/davidmp24/Plantao-Operacional/releases/download/v2.3.1/app-release.apk",
+  "releaseNotes": "O que há de novo nesta versão:\n- Correção no login Google (removido timeout indevido durante seleção de conta e exibição da causa real de erro).\n- Mantém abertura instantânea (0ms) mesmo com VPN ativa."
 }

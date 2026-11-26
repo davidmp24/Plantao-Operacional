@@ -681,7 +681,7 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
 
     try {
       final response = await http
-          .get(url, headers: const {'User-Agent': 'PlantaoOperacional/2.3.0'})
+          .get(url, headers: const {'User-Agent': 'PlantaoOperacional/2.3.1'})
           .timeout(const Duration(seconds: 5));
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body) as List;

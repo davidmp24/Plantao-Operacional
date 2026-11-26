@@ -38,7 +38,7 @@ class UpdateService {
       final response = await http
           .get(
             Uri.parse(_versionCheckUrl),
-            headers: const {'User-Agent': 'PlantaoOperacional/2.3.0'},
+            headers: const {'User-Agent': 'PlantaoOperacional/2.3.1'},
           )
           .timeout(const Duration(seconds: 5));
 
