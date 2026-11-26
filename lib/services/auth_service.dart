@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -18,13 +19,15 @@ class AuthService extends ChangeNotifier {
   GoogleSignInAccount? _googleUser;
   User? _firebaseUser;
   bool _isLoading = false;
-  bool _isInitializing = true; // Track silent sign in
+  final bool _isInitializing = false; // Sessão em cache imediata; nunca bloqueia a UI
+  String? _errorMessage;
 
   GoogleSignInAccount? get googleUser => _googleUser;
   User? get firebaseUser => _firebaseUser;
   bool get isLoading => _isLoading;
   bool get isInitializing => _isInitializing;
-  bool get isSignedIn => _firebaseUser != null && _googleUser != null;
+  bool get isSignedIn => _firebaseUser != null;
+  String? get errorMessage => _errorMessage;
 
   String get userDisplayName =>
       _googleUser?.displayName ?? _firebaseUser?.displayName ?? 'Usuário';
@@ -35,38 +38,51 @@ class AuthService extends ChangeNotifier {
   String get userId => _firebaseUser?.uid ?? '';
 
   AuthService() {
+    _firebaseUser = _firebaseAuth.currentUser;
     _firebaseAuth.authStateChanges().listen((user) {
       _firebaseUser = user;
       notifyListeners();
     });
-    // Tenta login silencioso ao iniciar
+    // Atualiza GoogleSignInAccount em background sem bloquear a abertura do app
     _trySilentSignIn();
   }
 
   Future<void> _trySilentSignIn() async {
     try {
-      final googleUser = await _googleSignIn.signInSilently();
+      final googleUser = await _googleSignIn
+          .signInSilently()
+          .timeout(const Duration(seconds: 4));
       if (googleUser != null) {
         _googleUser = googleUser;
-        await _signInToFirebase(googleUser);
+        if (_firebaseUser == null) {
+          await _signInToFirebase(googleUser)
+              .timeout(const Duration(seconds: 6));
+        }
+        notifyListeners();
       }
     } catch (e) {
-      debugPrint('Silent sign-in failed: $e');
-    } finally {
-      _isInitializing = false;
-      notifyListeners();
+      debugPrint('Silent sign-in em background (offline/VPN): $e');
     }
   }
 
   Future<void> signIn() async {
     _isLoading = true;
+    _errorMessage = null;
     notifyListeners();
     try {
-      final googleUser = await _googleSignIn.signIn();
+      final googleUser = await _googleSignIn
+          .signIn()
+          .timeout(const Duration(seconds: 15));
       if (googleUser == null) return; // Usuário cancelou
       _googleUser = googleUser;
-      await _signInToFirebase(googleUser);
+      await _signInToFirebase(googleUser)
+          .timeout(const Duration(seconds: 10));
+    } on TimeoutException {
+      _errorMessage =
+          'Tempo esgotado ao conectar com Google. Verifique sua conexão ou VPN.';
+      debugPrint('Sign-in timeout');
     } catch (e) {
+      _errorMessage = 'Falha ao entrar com Google. Verifique sua rede ou VPN.';
       debugPrint('Sign-in error: $e');
     } finally {
       _isLoading = false;
@@ -87,11 +103,21 @@ class AuthService extends ChangeNotifier {
     await _googleSignIn.signOut();
     await _firebaseAuth.signOut();
     _googleUser = null;
+    _errorMessage = null;
     notifyListeners();
   }
 
   /// Retorna um client HTTP autenticado para Google Calendar API
   Future<gcal.CalendarApi?> getCalendarApi() async {
+    if (_googleUser == null) {
+      try {
+        _googleUser = await _googleSignIn
+            .signInSilently()
+            .timeout(const Duration(seconds: 5));
+      } catch (e) {
+        debugPrint('getCalendarApi silent sign-in falhou: $e');
+      }
+    }
     final httpClient = await _googleSignIn.authenticatedClient();
     if (httpClient == null) return null;
     return gcal.CalendarApi(httpClient);

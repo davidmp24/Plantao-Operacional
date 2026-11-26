@@ -69,7 +69,7 @@ class SharedCommitment {
       title: d['title'] ?? '',
       hour: d['hour'] ?? '',
       notes: d['notes'] ?? '',
-      colorValue: d['colorValue'] ?? const Color(0xFF10A37F).value,
+      colorValue: d['colorValue'] ?? const Color(0xFF10A37F).toARGB32(),
     );
   }
 
@@ -127,11 +127,17 @@ class SharingService extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
     try {
-      await _publishMyProfile();
-      await _loadFollowedList();
-    } catch (e) {
-      _error = e.toString();
-      debugPrint('SharingService init error: $e');
+      try {
+        await _loadFollowedList();
+      } catch (e) {
+        debugPrint('SharingService _loadFollowedList error: $e');
+      }
+      try {
+        await _publishMyProfile();
+      } catch (e) {
+        _error = e.toString();
+        debugPrint('SharingService _publishMyProfile error (offline/VPN): $e');
+      }
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -298,7 +304,7 @@ class SharingService extends ChangeNotifier {
         if (title.isEmpty) continue;
         final hour = (item['hour'] as String? ?? '').trim();
         final notes = (item['notes'] as String? ?? '').trim();
-        final colorValue = item['color'] as int? ?? const Color(0xFF10A37F).value;
+        final colorValue = item['color'] as int? ?? const Color(0xFF10A37F).toARGB32();
         try {
           final commitment = SharedCommitment(
             id: '',
@@ -341,6 +347,16 @@ class SharingService extends ChangeNotifier {
       debugPrint('Error deleting: $e');
       return false;
     }
+  }
+
+  /// Remove um compromisso publicado pela chave determinística (data, título, hora)
+  Future<bool> deleteMyCommitmentByKey({
+    required DateTime date,
+    required String title,
+    required String hour,
+  }) async {
+    final docId = _commitmentDocId(date, title, hour);
+    return deleteMyCommitment(docId);
   }
 
   /// Stream dos compromissos publicados de um usuário específico (num mês)

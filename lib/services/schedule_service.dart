@@ -25,9 +25,9 @@ class TurnSlot {
 
 /// Tipos de escala automática suportados
 enum ScheduleModel {
-  misto_dia_noite_folga,   // Ciclo: D (07-19), N (19-07), F, D (07-19) — padrão do usuário
-  cinco_por_dois_fixo,     // 5x2 com turno fixo
-  cinco_por_dois_rotativo, // 5x2 com rotação semanal de turnos
+  mistoDiaNoiteFolga,   // Ciclo: D (07-19), N (19-07), F, D (07-19) — padrão do usuário
+  cincoPorDoisFixo,     // 5x2 com turno fixo
+  cincoPorDoisRotativo, // 5x2 com rotação semanal de turnos
 }
 
 /// Serviço de geração automática de escala de trabalho
@@ -87,12 +87,12 @@ class ScheduleService {
   }) {
     final List<TurnSlot> cycle;
     switch (model) {
-      case ScheduleModel.misto_dia_noite_folga:
+      case ScheduleModel.mistoDiaNoiteFolga:
         cycle = _cycleMistoDiaNoteiFolga;
         break;
-      case ScheduleModel.cinco_por_dois_fixo:
+      case ScheduleModel.cincoPorDoisFixo:
         return _generate5x2Fixed(startDate, months, isMorning5x2);
-      case ScheduleModel.cinco_por_dois_rotativo:
+      case ScheduleModel.cincoPorDoisRotativo:
         return _generate5x2Rotativo(startDate, months);
     }
 

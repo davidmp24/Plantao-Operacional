@@ -12,7 +12,7 @@ class ScheduleGeneratorScreen extends StatefulWidget {
 }
 
 class _ScheduleGeneratorScreenState extends State<ScheduleGeneratorScreen> {
-  ScheduleModel _selectedModel = ScheduleModel.misto_dia_noite_folga;
+  ScheduleModel _selectedModel = ScheduleModel.mistoDiaNoiteFolga;
   DateTime _startDate = DateTime.now();
   int _months = 3;
   bool _isGenerating = false;
@@ -20,15 +20,15 @@ class _ScheduleGeneratorScreenState extends State<ScheduleGeneratorScreen> {
   List<MapEntry<DateTime, TurnSlot>>? _preview;
 
   static const _modelLabels = {
-    ScheduleModel.misto_dia_noite_folga: 'Misto Dia/Noite — D, N, F, F (12h36h)',
-    ScheduleModel.cinco_por_dois_fixo: '5x2 Fixo — Seg-Sex + 2 folgas',
-    ScheduleModel.cinco_por_dois_rotativo: '5x2 Rotativo — Turnos Manhã/Tarde/Noite',
+    ScheduleModel.mistoDiaNoiteFolga: 'Misto Dia/Noite — D, N, F, F (12h36h)',
+    ScheduleModel.cincoPorDoisFixo: '5x2 Fixo — Seg-Sex + 2 folgas',
+    ScheduleModel.cincoPorDoisRotativo: '5x2 Rotativo — Turnos Manhã/Tarde/Noite',
   };
 
   static const _modelDescriptions = {
-    ScheduleModel.misto_dia_noite_folga: 'Ciclo de 4: Dia (07-19) → Noite (19-07) → Folga → Folga → repete',
-    ScheduleModel.cinco_por_dois_fixo: 'Seg a Sex trabalha, Sab e Dom folga. Turno fixo.',
-    ScheduleModel.cinco_por_dois_rotativo: 'Seg-Ter / Qua-Qui / Sex-Sab nos turnos Manhã→Tarde→Noite rotativos. Dom folga.',
+    ScheduleModel.mistoDiaNoiteFolga: 'Ciclo de 4: Dia (07-19) → Noite (19-07) → Folga → Folga → repete',
+    ScheduleModel.cincoPorDoisFixo: 'Seg a Sex trabalha, Sab e Dom folga. Turno fixo.',
+    ScheduleModel.cincoPorDoisRotativo: 'Seg-Ter / Qua-Qui / Sex-Sab nos turnos Manhã→Tarde→Noite rotativos. Dom folga.',
   };
 
   @override
@@ -39,7 +39,7 @@ class _ScheduleGeneratorScreenState extends State<ScheduleGeneratorScreen> {
       return Scaffold(
         appBar: AppBar(title: const Text('Gerador de Escala')),
         body: Center(child: Padding(padding: const EdgeInsets.all(28), child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.lock_person_outlined, size: 72, color: Colors.grey.withOpacity(0.4)),
+          Icon(Icons.lock_person_outlined, size: 72, color: Colors.grey.withValues(alpha: 0.4)),
           const SizedBox(height: 20),
           Text('Recurso PRO', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 10),
@@ -65,20 +65,36 @@ class _ScheduleGeneratorScreenState extends State<ScheduleGeneratorScreen> {
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                _SectionTitle(icon: Icons.view_agenda_outlined, title: 'Modelo de Escala'),
+                const _SectionTitle(icon: Icons.view_agenda_outlined, title: 'Modelo de Escala'),
                 const SizedBox(height: 8),
-                ...ScheduleModel.values.map((model) => Card(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  child: RadioListTile<ScheduleModel>(
-                    value: model, groupValue: _selectedModel,
-                    onChanged: (v) => setState(() { _selectedModel = v!; _preview = null; }),
-                    title: Text(_modelLabels[model]!, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                    subtitle: Text(_modelDescriptions[model]!, style: TextStyle(color: Colors.grey[500], fontSize: 12)),
-                    activeColor: const Color(0xFF10A37F),
+                RadioGroup<ScheduleModel>(
+                  groupValue: _selectedModel,
+                  onChanged: (v) {
+                    if (v != null) {
+                      setState(() {
+                        _selectedModel = v;
+                        _preview = null;
+                      });
+                    }
+                  },
+                  child: Column(
+                    children: ScheduleModel.values
+                        .map(
+                          (model) => Card(
+                            margin: const EdgeInsets.only(bottom: 8),
+                            child: RadioListTile<ScheduleModel>(
+                              value: model,
+                              title: Text(_modelLabels[model]!, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                              subtitle: Text(_modelDescriptions[model]!, style: TextStyle(color: Colors.grey[500], fontSize: 12)),
+                              activeColor: const Color(0xFF10A37F),
+                            ),
+                          ),
+                        )
+                        .toList(),
                   ),
-                )),
+                ),
                 const SizedBox(height: 16),
-                _SectionTitle(icon: Icons.settings_outlined, title: 'Configuração'),
+                const _SectionTitle(icon: Icons.settings_outlined, title: 'Configuração'),
                 const SizedBox(height: 8),
                 Card(child: Column(children: [
                   ListTile(
@@ -168,7 +184,7 @@ class _ScheduleGeneratorScreenState extends State<ScheduleGeneratorScreen> {
         final dateKey = '${date.year.toString().padLeft(4, '0')}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
         List<dynamic> existing = List<dynamic>.from(box.get(dateKey, defaultValue: []));
         
-        final colorValue = _slotColor(slot).value;
+        final colorValue = _slotColor(slot).toARGB32();
         final hourStr = slot.type == TurnType.folga 
           ? '' 
           : '${slot.start.hour.toString().padLeft(2, '0')}:${slot.start.minute.toString().padLeft(2, '0')} → ${slot.end.hour.toString().padLeft(2, '0')}:${slot.end.minute.toString().padLeft(2, '0')}';

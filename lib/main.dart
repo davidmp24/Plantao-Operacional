@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:collection/collection.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -83,9 +82,19 @@ class Holiday {
         global: json['global'] as bool? ?? false,
       );
     } catch (e) {
-      print("Erro ao parsear Holiday JSON: $e, Data: $json");
+      debugPrint("Erro ao parsear Holiday JSON: $e, Data: $json");
       return Holiday(date: DateTime.now(), localName: "Erro de Parse", name: "", countryCode: "", global: false);
     }
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'date': getDateKey(date),
+      'localName': localName,
+      'name': name,
+      'countryCode': countryCode,
+      'global': global,
+    };
   }
 }
 
@@ -99,7 +108,7 @@ void main() async {
     );
     await Hive.initFlutter();
     // Tratamento seguro para boxes do Hive (evita crash por corrupção em Xiaomi/Redmi)
-    final boxes = ['commitments', 'templates', 'bills_templates', 'bills_paid_status', 'settings'];
+    final boxes = ['commitments', 'templates', 'bills_templates', 'bills_paid_status', 'settings', 'holidays_cache'];
     for (var boxName in boxes) {
       try {
         await Hive.openBox(boxName);
@@ -166,21 +175,66 @@ class MyApp extends StatelessWidget {
               titleLarge: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
             ),
             colorScheme: const ColorScheme.dark(
-              primary: Color(0xFF10A37F), secondary: Color(0xFF10A37F), surface: Color(0xFF2C2C2C),
-              background: Color(0xFF1E1E1E), onPrimary: Colors.white, onSecondary: Colors.white,
-              onSurface: Colors.white, onBackground: Colors.white, error: Colors.redAccent, onError: Colors.white,
+              primary: Color(0xFF10A37F),
+              secondary: Color(0xFF10A37F),
+              surface: Color(0xFF2C2C2C),
+              onPrimary: Colors.white,
+              onSecondary: Colors.white,
+              onSurface: Colors.white,
+              error: Colors.redAccent,
+              onError: Colors.white,
             ),
-            floatingActionButtonTheme: const FloatingActionButtonThemeData( backgroundColor: Color(0xFF10A37F), foregroundColor: Colors.white,),
-            popupMenuTheme: const PopupMenuThemeData( color: Color(0xFF2C2C2C), textStyle: TextStyle(color: Colors.white),),
+            floatingActionButtonTheme: const FloatingActionButtonThemeData(
+              backgroundColor: Color(0xFF10A37F),
+              foregroundColor: Colors.white,
+            ),
+            popupMenuTheme: const PopupMenuThemeData(
+              color: Color(0xFF2C2C2C),
+              textStyle: TextStyle(color: Colors.white),
+            ),
             dialogTheme: const DialogThemeData(
               backgroundColor: Color(0xFF2C2C2C),
               titleTextStyle: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
               contentTextStyle: TextStyle(color: Colors.white70, fontSize: 16),
             ),
-            textButtonTheme: TextButtonThemeData( style: TextButton.styleFrom(foregroundColor: const Color(0xFF10A37F)),),
+            textButtonTheme: TextButtonThemeData(
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFF10A37F),
+                minimumSize: const Size(48, 48),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+            elevatedButtonTheme: ElevatedButtonThemeData(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF10A37F),
+                foregroundColor: Colors.white,
+                minimumSize: const Size(48, 48),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+            outlinedButtonTheme: OutlinedButtonThemeData(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF10A37F),
+                side: const BorderSide(color: Color(0xFF10A37F)),
+                minimumSize: const Size(48, 48),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+            filledButtonTheme: FilledButtonThemeData(
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF10A37F),
+                foregroundColor: Colors.white,
+                minimumSize: const Size(48, 48),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
             cardTheme: CardThemeData(
-              color: const Color(0xFF2C2C2C), elevation: 2,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              color: const Color(0xFF2C2C2C),
+              elevation: 2,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+              ),
               margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
             ),
             inputDecorationTheme: InputDecorationTheme(
@@ -191,8 +245,8 @@ class MyApp extends StatelessWidget {
             ),
             iconTheme: const IconThemeData( color: Colors.white70, ),
             checkboxTheme: CheckboxThemeData(
-              fillColor: MaterialStateProperty.resolveWith((states) { if (states.contains(MaterialState.selected)) { return const Color(0xFF10A37F); } return Colors.grey[800]; }),
-              checkColor: MaterialStateProperty.all(Colors.black), side: const BorderSide(color: Colors.white54),
+              fillColor: WidgetStateProperty.resolveWith((states) { if (states.contains(WidgetState.selected)) { return const Color(0xFF10A37F); } return Colors.grey[800]; }),
+              checkColor: WidgetStateProperty.all(Colors.black), side: const BorderSide(color: Colors.white54),
             ),
             dividerTheme: const DividerThemeData( color: Colors.white24, thickness: 1, space: 1,)
         ),
@@ -237,7 +291,7 @@ class WeeklyViewPage extends StatefulWidget {
   const WeeklyViewPage({super.key});
 
   @override
-  _WeeklyViewPageState createState() => _WeeklyViewPageState();
+  State<WeeklyViewPage> createState() => _WeeklyViewPageState();
 }
 
 class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStateMixin {
@@ -245,16 +299,17 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
   late Box _templatesBox;
   late Box _billsTemplatesBoxState;
   late Box _billsPaidStatusBoxState;
+  late Box _holidaysCacheBox;
 
   DateTime _focusedDay = DateTime.now();
   DateTime _selectedDate = DateTime.now();
   late final ValueNotifier<List<dynamic>> _selectedCommitments;
   Map<String, List<dynamic>> _allCommitments = {};
   SelectionMode _selectionMode = SelectionMode.single;
-  Set<DateTime> _multiSelectedDays = {};
+  final Set<DateTime> _multiSelectedDays = {};
 
-  Map<int, List<Holiday>> _cachedHolidays = {};
-  bool _isLoadingHolidays = false;
+  final Map<int, List<Holiday>> _cachedHolidays = {};
+  final Set<int> _fetchingHolidayYears = {};
   Set<DateTime> _holidayDates = {};
 
   // --- Compartilhamento ---
@@ -276,6 +331,7 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
     _templatesBox = Hive.box('templates');
     _billsTemplatesBoxState = Hive.box('bills_templates');
     _billsPaidStatusBoxState = Hive.box('bills_paid_status');
+    _holidaysCacheBox = Hive.box('holidays_cache');
 
     _selectedDate = normalizeDate(_focusedDay);
     _allCommitments = {};
@@ -301,7 +357,7 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
             updateService.showUpdateDialog(context, updateInfo);
           }
         } catch (e) {
-          print("Verificação automática de atualização falhou, mas não mostraremos erro ao usuário no início.");
+          debugPrint("Verificação automática de atualização falhou, mas não mostraremos erro ao usuário no início.");
         }
       }
     });
@@ -331,7 +387,7 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
   String _getBillPaidStatusKeyForState(String billId, DateTime month) {
     final year = month.year;
     final monthPad = month.month.toString().padLeft(2, '0');
-    return "${billId}_${year}-${monthPad}";
+    return "${billId}_$year-$monthPad";
   }
 
   Future<void> _checkPendingBillsForMonth(DateTime month) async {
@@ -466,24 +522,6 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
     await sharing.syncAllCommitments(snapshot);
   }
 
-  /// Agenda notificação de lembrete para um compromisso (se tiver horário).
-  void _scheduleNotification(DateTime date, Map<String, dynamic> commitment) {
-    final hour = commitment['hour'] as String? ?? '';
-    if (hour.isEmpty) return;
-    final id = NotificationService.makeId(
-      getDateKey(date),
-      commitment['title'] ?? '',
-      hour,
-    );
-    NotificationService().scheduleCommitmentNotification(
-      id: id,
-      title: commitment['title'] ?? 'Compromisso',
-      hour: hour,
-      date: date,
-      notes: commitment['notes'],
-    );
-  }
-
   /// Cancela notificação de um compromisso removido.
   void _cancelNotification(DateTime date, Map<String, dynamic> commitment) {
     final hour = commitment['hour'] as String? ?? '';
@@ -563,33 +601,112 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
     _selectedCommitments.value = combined;
   }
 
-  Future<void> _fetchHolidaysForYear(int year) async {
-    if (_isLoadingHolidays || _cachedHolidays.containsKey(year)) {
-      if (_cachedHolidays.containsKey(year)) _updateHolidayDatesSet();
-      return;
-    }
-    if (!mounted) return;
-    setState(() { _isLoadingHolidays = true; });
-    const countryCode = 'BR';
-    final url = Uri.parse('https://date.nager.at/api/v3/PublicHolidays/$year/$countryCode');
-    List<Holiday> fetchedHolidays = [];
+  DateTime _calculateEaster(int year) {
+    final int a = year % 19;
+    final int b = year ~/ 100;
+    final int c = year % 100;
+    final int d = b ~/ 4;
+    final int e = b % 4;
+    final int f = (b + 8) ~/ 25;
+    final int g = (b - f + 1) ~/ 3;
+    final int h = (19 * a + b - d - g + 15) % 30;
+    final int i = c ~/ 4;
+    final int k = c % 4;
+    final int l = (32 + 2 * e + 2 * i - h - k) % 7;
+    final int m = (a + 11 * h + 22 * l) ~/ 451;
+    final int month = (h + l - 7 * m + 114) ~/ 31;
+    final int day = ((h + l - 7 * m + 114) % 31) + 1;
+    return DateTime.utc(year, month, day);
+  }
+
+  List<Holiday> _buildBrazilianHolidaysFallback(int year) {
+    final easter = _calculateEaster(year);
+    Holiday brHoliday(DateTime date, String localName, String name) => Holiday(
+          date: normalizeDate(date),
+          localName: localName,
+          name: name,
+          countryCode: 'BR',
+          global: true,
+        );
+
+    return <Holiday>[
+      brHoliday(DateTime.utc(year, 1, 1), 'Confraternização Universal', 'New Year\'s Day'),
+      brHoliday(easter.subtract(const Duration(days: 48)), 'Carnaval', 'Carnival'),
+      brHoliday(easter.subtract(const Duration(days: 47)), 'Carnaval', 'Carnival'),
+      brHoliday(easter.subtract(const Duration(days: 2)), 'Sexta-feira Santa', 'Good Friday'),
+      brHoliday(easter, 'Domingo de Páscoa', 'Easter Sunday'),
+      brHoliday(DateTime.utc(year, 4, 21), 'Tiradentes', 'Tiradentes'),
+      brHoliday(DateTime.utc(year, 5, 1), 'Dia do Trabalhador', 'Labour Day'),
+      brHoliday(easter.add(const Duration(days: 60)), 'Corpus Christi', 'Corpus Christi'),
+      brHoliday(DateTime.utc(year, 9, 7), 'Independência do Brasil', 'Independence Day'),
+      brHoliday(DateTime.utc(year, 10, 12), 'Nossa Senhora Aparecida', 'Our Lady of Aparecida'),
+      brHoliday(DateTime.utc(year, 11, 2), 'Finados', 'All Souls\' Day'),
+      brHoliday(DateTime.utc(year, 11, 15), 'Proclamação da República', 'Republic Proclamation Day'),
+      if (year >= 2024)
+        brHoliday(DateTime.utc(year, 11, 20), 'Dia Nacional de Zumbi e da Consciência Negra', 'Black Awareness Day'),
+      brHoliday(DateTime.utc(year, 12, 25), 'Natal', 'Christmas Day'),
+    ];
+  }
+
+  List<Holiday> _loadCachedOrFallbackHolidays(int year) {
     try {
-      final response = await http.get(url).timeout(const Duration(seconds: 15));
-      if (response.statusCode == 200) {
-        fetchedHolidays = (jsonDecode(response.body) as List).map((data) => Holiday.fromJson(data)).toList();
-      } else {
-        throw Exception('Status ${response.statusCode}');
+      final raw = _holidaysCacheBox.get(year.toString());
+      if (raw is List && raw.isNotEmpty) {
+        final parsed = raw
+            .whereType<Map>()
+            .map((item) => Holiday.fromJson(Map<String, dynamic>.from(item)))
+            .toList();
+        if (parsed.isNotEmpty) return parsed;
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao buscar feriados.'), backgroundColor: Colors.red));
+      debugPrint('Erro ao ler cache local de feriados ($year): $e');
     }
-    if (mounted) {
-      setState(() {
-        _cachedHolidays[year] = fetchedHolidays;
-        _updateHolidayDatesSet();
-        _isLoadingHolidays = false;
-        _updateSelectedCommitments();
-      });
+    return _buildBrazilianHolidaysFallback(year);
+  }
+
+  Future<void> _fetchHolidaysForYear(int year) async {
+    if (!_cachedHolidays.containsKey(year)) {
+      _cachedHolidays[year] = _loadCachedOrFallbackHolidays(year);
+      _updateHolidayDatesSet();
+      _updateSelectedCommitments();
+    }
+
+    if (_fetchingHolidayYears.contains(year) || !mounted) {
+      return;
+    }
+
+    _fetchingHolidayYears.add(year);
+    const countryCode = 'BR';
+    final url = Uri.parse('https://date.nager.at/api/v3/PublicHolidays/$year/$countryCode');
+
+    try {
+      final response = await http
+          .get(url, headers: const {'User-Agent': 'PlantaoOperacional/2.3.0'})
+          .timeout(const Duration(seconds: 5));
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body) as List;
+        final fetchedHolidays = decoded
+            .whereType<Map<String, dynamic>>()
+            .map((data) => Holiday.fromJson(data))
+            .toList();
+        if (fetchedHolidays.isNotEmpty) {
+          await _holidaysCacheBox.put(
+            year.toString(),
+            fetchedHolidays.map((h) => h.toJson()).toList(),
+          );
+          if (mounted) {
+            setState(() {
+              _cachedHolidays[year] = fetchedHolidays;
+              _updateHolidayDatesSet();
+              _updateSelectedCommitments();
+            });
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Feriados em modo offline/VPN para $year: $e');
+    } finally {
+      _fetchingHolidayYears.remove(year);
     }
   }
 
@@ -609,6 +726,11 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
     final folgaMap = {'title': 'Folga', 'color': Colors.grey.value, 'hour': '', 'notes': ''};
     if (isDayOff) {
       existing.removeWhere((e) => e is Map && e['title'] == 'Folga');
+      context.read<SharingService>().deleteMyCommitmentByKey(
+            date: normalizedDate,
+            title: 'Folga',
+            hour: '',
+          );
     } else {
       existing.add(folgaMap);
       _autoSync(normalizedDate, folgaMap);
@@ -632,16 +754,24 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
       ),
     );
     if (addOrRemove == null) return;
+    final sharing = context.read<SharingService>();
     for (DateTime day in days) {
       final dateKey = getDateKey(day);
       List<dynamic> existing = List<dynamic>.from(_commitmentsBox.get(dateKey, defaultValue: []));
       final isCurrentlyDayOff = existing.any((e) => e is Map && e['title'] == 'Folga');
       if (addOrRemove == true && !isCurrentlyDayOff) {
-        existing.add({'title': 'Folga', 'color': Colors.grey.value, 'hour': '', 'notes': ''});
+        final folgaMap = {'title': 'Folga', 'color': Colors.grey.toARGB32(), 'hour': '', 'notes': ''};
+        existing.add(folgaMap);
         await _commitmentsBox.put(dateKey, existing);
+        _autoSync(day, folgaMap);
       } else if (addOrRemove == false && isCurrentlyDayOff) {
         existing.removeWhere((e) => e is Map && e['title'] == 'Folga');
         await _commitmentsBox.put(dateKey, existing);
+        sharing.deleteMyCommitmentByKey(
+              date: day,
+              title: 'Folga',
+              hour: '',
+            );
       }
     }
   }
@@ -684,11 +814,18 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
       ),
     );
     if (confirm == true && mounted) {
+      final sharing = context.read<SharingService>();
       List<dynamic> actualCommitments = List<dynamic>.from(_allCommitments[dateKey] ?? []);
       actualCommitments.removeWhere((hiveItem) =>
       hiveItem is Map && hiveItem['title'] == item['title'] && hiveItem['hour'] == item['hour'] &&
           hiveItem['notes'] == item['notes'] && hiveItem['color'] == item['color']);
       await _commitmentsBox.put(dateKey, actualCommitments);
+      // Remove também do Firestore se estiver logado
+      sharing.deleteMyCommitmentByKey(
+            date: _selectedDate,
+            title: titleToRemove,
+            hour: item['hour'] as String? ?? '',
+          );
       // Cancela a notificação do compromisso removido
       _cancelNotification(_selectedDate, Map<String, dynamic>.from(item));
       WidgetService.updateTodayWidget();
@@ -1025,19 +1162,22 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
               selectedDayPredicate: (day) => _selectionMode == SelectionMode.single && isSameDay(_selectedDate, normalizeDate(day)),
               onDaySelected: (selectedDay, focusedDay) {
                 final normalizedSelectedDay = normalizeDate(selectedDay);
-                bool monthJustChanged = normalizeDate(focusedDay).month != normalizeDate(this._focusedDay).month ||
-                    normalizeDate(focusedDay).year != normalizeDate(this._focusedDay).year;
+                bool monthJustChanged = normalizeDate(focusedDay).month != normalizeDate(_focusedDay).month ||
+                    normalizeDate(focusedDay).year != normalizeDate(_focusedDay).year;
                 if (mounted) {
                   setState(() {
-                    this._focusedDay = focusedDay;
+                    _focusedDay = focusedDay;
                     _selectedDate = normalizedSelectedDay;
                     if (_selectionMode == SelectionMode.multi) {
-                      if (_multiSelectedDays.contains(normalizedSelectedDay)) _multiSelectedDays.remove(normalizedSelectedDay);
-                      else _multiSelectedDays.add(normalizedSelectedDay);
+                      if (_multiSelectedDays.contains(normalizedSelectedDay)) {
+                        _multiSelectedDays.remove(normalizedSelectedDay);
+                      } else {
+                        _multiSelectedDays.add(normalizedSelectedDay);
+                      }
                     }
                     _updateSelectedCommitments();
                     if (monthJustChanged) {
-                      _checkPendingBillsForMonth(this._focusedDay);
+                      _checkPendingBillsForMonth(_focusedDay);
                     }
                   });
                 }
@@ -1045,12 +1185,15 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
               onPageChanged: (focusedDay) {
                 if (mounted) {
                   setState(() {
-                    this._focusedDay = focusedDay;
+                    _focusedDay = focusedDay;
                     _selectedDate = normalizeDate(focusedDay);
-                    if (!_cachedHolidays.containsKey(focusedDay.year)) _fetchHolidaysForYear(focusedDay.year);
-                    else _updateHolidayDatesSet();
+                    if (!_cachedHolidays.containsKey(focusedDay.year)) {
+                      _fetchHolidaysForYear(focusedDay.year);
+                    } else {
+                      _updateHolidayDatesSet();
+                    }
                     _updateSelectedCommitments();
-                    _checkPendingBillsForMonth(this._focusedDay);
+                    _checkPendingBillsForMonth(_focusedDay);
                   });
                   // Recria o stream do seguido com o novo mês
                   _subscribeToFollowedEvents();
@@ -1126,7 +1269,32 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
               valueListenable: _selectedCommitments,
               builder: (context, displayItems, _) {
                 if (displayItems.isEmpty && _selectionMode == SelectionMode.single) {
-                  return Center(child: Text("Nenhum item neste dia.", style: Theme.of(context).textTheme.bodyMedium));
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.event_note_outlined,
+                            size: 40,
+                            color: Colors.white.withValues(alpha: 0.25),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            "Nenhum item neste dia.",
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            "Use '+' abaixo para adicionar um compromisso ou turno.",
+                            textAlign: TextAlign.center,
+                            style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
                 }
                 if (_selectionMode == SelectionMode.multi && _multiSelectedDays.isEmpty) {
                   return Center(child: Text("Selecione dias no calendário.", textAlign: TextAlign.center, style: Theme.of(context).textTheme.bodyMedium));
@@ -1155,13 +1323,13 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
                         itemColor = Colors.amber[800]!;
                         leadingIcon = const Icon(Icons.celebration_rounded, color: Colors.white, size: 22);
                       } else if (isDayOff) {
-                        itemColor = Color(item['color'] as int? ?? Colors.grey.value);
+                        itemColor = Color(item['color'] as int? ?? Colors.grey.toARGB32());
                         leadingIcon = const Icon(Icons.free_breakfast_outlined, size: 20, color: Colors.white70);
                       } else if (isShared) {
-                        itemColor = Color(item['color'] as int? ?? Colors.orange.value);
+                        itemColor = Color(item['color'] as int? ?? Colors.orange.toARGB32());
                         leadingIcon = const Icon(Icons.people_rounded, size: 20, color: Colors.white);
                       } else {
-                        itemColor = Color(item['color'] as int? ?? Theme.of(context).colorScheme.primary.value);
+                        itemColor = Color(item['color'] as int? ?? Theme.of(context).colorScheme.primary.toARGB32());
                       }
                       return Card(
                         // Borda sutil para eventos compartilhados
@@ -1170,46 +1338,81 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
                                 borderRadius: BorderRadius.circular(12),
                                 side: const BorderSide(color: Color(0xFFFF9800), width: 1.2))
                             : null,
-                        child: ListTile(
-                          leading: CircleAvatar(backgroundColor: itemColor, child: leadingIcon),
-                          title: Text(
-                            isHolidayItem ? title : (hour.isNotEmpty ? '[$hour] $title' : title),
-                            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                              decoration: isDayOff ? TextDecoration.lineThrough : TextDecoration.none,
-                              color: isDayOff ? Colors.grey[500] : (isHolidayItem ? Colors.amber[200] : Colors.white),
-                              fontStyle: isHolidayItem ? FontStyle.italic : FontStyle.normal,
+                        clipBehavior: Clip.antiAlias,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            border: Border(
+                              left: BorderSide(color: itemColor, width: 4),
                             ),
                           ),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (notes.isNotEmpty && !isHolidayItem)
-                                Text(notes, style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                    color: isDayOff ? Colors.grey[600] : Colors.white70)),
-                              if (isShared && ownerName.isNotEmpty)
-                                Text('\ud83d\udc65 $ownerName',
-                                    style: const TextStyle(fontSize: 11, color: Color(0xFFFF9800))),
-                            ],
-                          ),
-                          trailing: (!isHolidayItem && !isShared && _selectionMode == SelectionMode.single)
-                              ? Row(mainAxisSize: MainAxisSize.min, children: [
-                            if (!isDayOff)
+                          child: ListTile(
+                            leading: CircleAvatar(backgroundColor: itemColor, child: leadingIcon),
+                            title: Row(
+                              children: [
+                                if (!isHolidayItem && hour.isNotEmpty) ...[
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    margin: const EdgeInsets.only(right: 8),
+                                    decoration: BoxDecoration(
+                                      color: itemColor.withValues(alpha: 0.18),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(color: itemColor.withValues(alpha: 0.4)),
+                                    ),
+                                    child: Text(
+                                      hour,
+                                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.white),
+                                    ),
+                                  ),
+                                ],
+                                Expanded(
+                                  child: Text(
+                                    title,
+                                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                      decoration: isDayOff ? TextDecoration.lineThrough : TextDecoration.none,
+                                      color: isDayOff ? Colors.grey[500] : (isHolidayItem ? Colors.amber[200] : Colors.white),
+                                      fontStyle: isHolidayItem ? FontStyle.italic : FontStyle.normal,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (notes.isNotEmpty && !isHolidayItem)
+                                  Text(notes, style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                      color: isDayOff ? Colors.grey[600] : Colors.white70)),
+                                if (isShared && ownerName.isNotEmpty)
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(Icons.people_outline, size: 13, color: Color(0xFFFF9800)),
+                                      const SizedBox(width: 4),
+                                      Text(ownerName, style: const TextStyle(fontSize: 11, color: Color(0xFFFF9800))),
+                                    ],
+                                  ),
+                              ],
+                            ),
+                            trailing: (!isHolidayItem && !isShared && _selectionMode == SelectionMode.single)
+                                ? Row(mainAxisSize: MainAxisSize.min, children: [
+                              if (!isDayOff)
+                                IconButton(
+                                    icon: const Icon(Icons.note_alt_outlined, size: 20),
+                                    tooltip: 'Editar Notas',
+                                    color: Colors.white54,
+                                    onPressed: () => _editCommitmentNotes(index),
+                                    constraints: const BoxConstraints(),
+                                    padding: const EdgeInsets.symmetric(horizontal: 4)),
                               IconButton(
-                                  icon: const Icon(Icons.note_alt_outlined, size: 20),
-                                  tooltip: 'Editar Notas',
-                                  color: Colors.white54,
-                                  onPressed: () => _editCommitmentNotes(index),
+                                  icon: Icon(Icons.delete_outline, color: Colors.redAccent.withValues(alpha: 0.7)),
+                                  tooltip: "Remover",
+                                  onPressed: () => _confirmRemove(index),
                                   constraints: const BoxConstraints(),
                                   padding: const EdgeInsets.symmetric(horizontal: 4)),
-                            IconButton(
-                                icon: Icon(Icons.delete_outline, color: Colors.redAccent.withOpacity(0.7)),
-                                tooltip: "Remover",
-                                onPressed: () => _confirmRemove(index),
-                                constraints: const BoxConstraints(),
-                                padding: const EdgeInsets.symmetric(horizontal: 4)),
-                          ])
-                              : null,
+                            ])
+                                : null,
+                          ),
                         ),
                       );
                     } else {
@@ -1247,7 +1450,7 @@ class _WeeklyViewPageState extends State<WeeklyViewPage> with TickerProviderStat
               ),
             ),
           ),
-        if (_isLoadingHolidays || _isPerformingBackupRestore)
+        if (_isPerformingBackupRestore)
           Container(
             color: Colors.black.withOpacity(0.5),
             child: Center(child: CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(Theme.of(context).colorScheme.primary))),
@@ -1559,6 +1762,8 @@ class _TemplateSelectorPageState extends State<TemplateSelectorPage> {
 
   void _handleTemplateSelection(Map<String, dynamic> template) async {
     if (widget.selectedDate != null) {
+      final auth = context.read<AuthService>();
+      final sharing = context.read<SharingService>();
       final dateKey = getDateKey(widget.selectedDate!);
       final List<dynamic> dayCommitments = List<dynamic>.from(_commitmentsBox.get(dateKey, defaultValue: []));
       final commitmentMap = Map<String, dynamic>.from(template);
@@ -1568,15 +1773,13 @@ class _TemplateSelectorPageState extends State<TemplateSelectorPage> {
 
       // Auto-sync para o Firestore
       try {
-        final auth = context.read<AuthService>();
-        final sharing = context.read<SharingService>();
         if (auth.isSignedIn) {
           sharing.publishCommitment(
             date: widget.selectedDate!,
             title: commitmentMap['title'] ?? '',
             hour: commitmentMap['hour'] ?? '',
             notes: commitmentMap['notes'] ?? '',
-            colorValue: commitmentMap['color'] ?? const Color(0xFF10A37F).value,
+            colorValue: commitmentMap['color'] ?? const Color(0xFF10A37F).toARGB32(),
           );
         }
       } catch (e) {
@@ -1690,7 +1893,7 @@ class TemplateManagerPage extends StatefulWidget {
   const TemplateManagerPage({super.key});
 
   @override
-  _TemplateManagerPageState createState() => _TemplateManagerPageState();
+  State<TemplateManagerPage> createState() => _TemplateManagerPageState();
 }
 
 class _TemplateManagerPageState extends State<TemplateManagerPage> {
@@ -1722,7 +1925,7 @@ class _TemplateManagerPageState extends State<TemplateManagerPage> {
     Map<String, dynamic>? existingTemplate;
     dynamic existingKey;
     if (isEditing) {
-      existingKey = _templateKeys[editIndex!];
+      existingKey = _templateKeys[editIndex];
       final rawData = _templatesBox.get(existingKey);
       if (rawData is Map) {
         existingTemplate = Map<String, dynamic>.from(rawData);
@@ -1731,7 +1934,7 @@ class _TemplateManagerPageState extends State<TemplateManagerPage> {
         return;
       }
     }
-    Color selectedColor = isEditing ? Color(existingTemplate!['color'] as int? ?? Colors.blue.value) : const Color(0xFF10A37F);
+    Color selectedColor = isEditing ? Color(existingTemplate!['color'] as int? ?? Colors.blue.toARGB32()) : const Color(0xFF10A37F);
     final controllerTitle = TextEditingController(text: isEditing ? existingTemplate!['title'] as String? ?? '' : '');
     final controllerHour = TextEditingController(text: isEditing ? existingTemplate!['hour'] as String? ?? '' : '');
     final controllerNotes = TextEditingController(text: isEditing ? existingTemplate!['notes'] as String? ?? '' : '');
@@ -1931,8 +2134,11 @@ class _BillManagerPageState extends State<BillManagerPage> {
             }
             final billData = {'title': title, 'dayOfMonth': dayOfMonth, 'notes': notes};
             try {
-              if (isEditing) await _billsBox.put(editId!, billData);
-              else await _billsBox.put(_uuid.v4(), billData);
+              if (isEditing) {
+                await _billsBox.put(editId, billData);
+              } else {
+                await _billsBox.put(_uuid.v4(), billData);
+              }
               _loadBillTemplates();
               if (mounted) Navigator.pop(context, true);
             } catch (e) {
@@ -2004,7 +2210,7 @@ class BillsPage extends StatefulWidget {
   const BillsPage({super.key});
 
   @override
-  _BillsPageState createState() => _BillsPageState();
+  State<BillsPage> createState() => _BillsPageState();
 }
 
 class _BillsPageState extends State<BillsPage> {
@@ -2047,7 +2253,7 @@ class _BillsPageState extends State<BillsPage> {
   void _loadPaidStatusesForMonth(DateTime month) {
     final year = month.year;
     final monthPad = month.month.toString().padLeft(2, '0');
-    final monthSuffix = "_${year}-${monthPad}";
+    final monthSuffix = "_$year-$monthPad";
     final Set<String> paidKeys = {};
     for (var key in _billsPaidStatusBox.keys) {
       if (key is String && key.endsWith(monthSuffix) && _billsPaidStatusBox.get(key) == true) {
@@ -2061,7 +2267,7 @@ class _BillsPageState extends State<BillsPage> {
 
   String _getBillPaidStatusKey(String billId, DateTime month) {
     final year = month.year; final monthPad = month.month.toString().padLeft(2, '0');
-    return "${billId}_${year}-${monthPad}";
+    return "${billId}_$year-$monthPad";
   }
 
   bool _isBillPaid(String billId, DateTime month) {
@@ -2281,7 +2487,7 @@ class _InfoPageState extends State<InfoPage> {
     }
 
     try {
-      final updateInfo = await updateService.checkForUpdate();
+      final updateInfo = await updateService.checkForUpdate(silent: false);
       if (mounted) {
         setState(() {
           if (updateInfo != null) {

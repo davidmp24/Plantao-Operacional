@@ -2,7 +2,7 @@ name: plantao
 description: "Plantão Operacional PRO - Agenda inteligente para equipes e plantões."
 publish_to: 'none'
 
-version: 2.2.0+22
+version: 2.3.0+23
 
 environment:
   sdk: '>=3.0.0 <4.0.0'

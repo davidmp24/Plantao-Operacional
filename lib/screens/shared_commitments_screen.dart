@@ -14,25 +14,10 @@ class SharedCommitmentsScreen extends StatefulWidget {
   State<SharedCommitmentsScreen> createState() => _SharedCommitmentsScreenState();
 }
 
-class _SharedCommitmentsScreenState extends State<SharedCommitmentsScreen>
-    with SingleTickerProviderStateMixin {
+class _SharedCommitmentsScreenState extends State<SharedCommitmentsScreen> {
   DateTime _focusedDay = DateTime.now();
   DateTime _selectedDay = DateTime.now();
-  // null = minha agenda publicada; uid string = agenda de um seguido
-  String? _viewingUid;
-  late TabController _tabController;
-
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 1, vsync: this);
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
+  int _selectedTabIndex = 0;
 
   @override
   Widget build(BuildContext context) {
@@ -46,8 +31,8 @@ class _SharedCommitmentsScreenState extends State<SharedCommitmentsScreen>
 
     // Tabs: "Minha Agenda" + um tab por usuário seguido
     final tabs = <Widget>[
-      Tab(
-        icon: const Icon(Icons.person, size: 18),
+      const Tab(
+        icon: Icon(Icons.person, size: 18),
         text: 'Minha Agenda',
       ),
       ...sharing.followedProfiles.map((p) => Tab(
@@ -56,66 +41,62 @@ class _SharedCommitmentsScreenState extends State<SharedCommitmentsScreen>
       )),
     ];
 
-    if (_tabController.length != tabs.length) {
-      _tabController.dispose();
-      _tabController = TabController(
-        length: tabs.length,
-        vsync: this,
-        initialIndex: _tabController.index.clamp(0, tabs.length - 1),
-      );
-    }
+    final safeIndex = _selectedTabIndex.clamp(0, tabs.length - 1);
 
     // Quem estamos visualizando?
     String? currentUid;
     UserProfile? currentProfile;
-    if (_tabController.index == 0) {
+    if (safeIndex == 0) {
       currentUid = sharing.myProfile?.uid;
       currentProfile = null;
     } else {
-      final idx = _tabController.index - 1;
+      final idx = safeIndex - 1;
       if (idx < sharing.followedProfiles.length) {
         currentProfile = sharing.followedProfiles[idx];
         currentUid = currentProfile.uid;
       }
     }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Agenda Compartilhada'),
-        actions: [
-          // Botão de adicionar seguido
-          IconButton(
-            icon: const Icon(Icons.person_add_alt_1_outlined),
-            tooltip: 'Seguir usuário',
-            onPressed: () => _showFollowDialog(context, sharing),
+    return DefaultTabController(
+      length: tabs.length,
+      initialIndex: safeIndex,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Agenda Compartilhada'),
+          actions: [
+            // Botão de adicionar seguido
+            IconButton(
+              icon: const Icon(Icons.person_add_alt_1_outlined),
+              tooltip: 'Seguir usuário',
+              onPressed: () => _showFollowDialog(sharing),
+            ),
+            // Botão do meu código
+            IconButton(
+              icon: const Icon(Icons.qr_code_2_outlined),
+              tooltip: 'Meu Código',
+              onPressed: () => _showMyCodeDialog(context, sharing),
+            ),
+          ],
+          bottom: TabBar(
+            isScrollable: true,
+            onTap: (i) => setState(() => _selectedTabIndex = i),
+            tabs: tabs,
+            indicatorColor: const Color(0xFF10A37F),
+            labelColor: const Color(0xFF10A37F),
+            unselectedLabelColor: Colors.white54,
           ),
-          // Botão do meu código
-          IconButton(
-            icon: const Icon(Icons.qr_code_2_outlined),
-            tooltip: 'Meu Código',
-            onPressed: () => _showMyCodeDialog(context, sharing),
-          ),
-        ],
-        bottom: TabBar(
-          controller: _tabController,
-          isScrollable: true,
-          onTap: (i) => setState(() {}),
-          tabs: tabs,
-          indicatorColor: const Color(0xFF10A37F),
-          labelColor: const Color(0xFF10A37F),
-          unselectedLabelColor: Colors.white54,
         ),
+        body: _buildCalendarView(context, sharing, auth, currentUid, currentProfile),
+        floatingActionButton: safeIndex == 0
+            ? FloatingActionButton.extended(
+                onPressed: () => _showPublishDialog(sharing),
+                icon: const Icon(Icons.share_outlined),
+                label: const Text('Publicar'),
+                backgroundColor: const Color(0xFF10A37F),
+                foregroundColor: Colors.white,
+              )
+            : null,
       ),
-      body: _buildCalendarView(context, sharing, auth, currentUid, currentProfile),
-      floatingActionButton: _tabController.index == 0
-          ? FloatingActionButton.extended(
-              onPressed: () => _showPublishDialog(context, sharing),
-              icon: const Icon(Icons.share_outlined),
-              label: const Text('Publicar'),
-              backgroundColor: const Color(0xFF10A37F),
-              foregroundColor: Colors.white,
-            )
-          : null,
     );
   }
 
@@ -169,7 +150,7 @@ class _SharedCommitmentsScreenState extends State<SharedCommitmentsScreen>
           // Header de quem estamos vendo
           if (profile != null)
             Container(
-              color: const Color(0xFF10A37F).withOpacity(0.12),
+              color: const Color(0xFF10A37F).withValues(alpha: 0.12),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Row(children: [
                 CircleAvatar(
@@ -213,7 +194,7 @@ class _SharedCommitmentsScreenState extends State<SharedCommitmentsScreen>
                 rightChevronIcon: Icon(Icons.chevron_right, color: Colors.white),
               ),
               calendarStyle: CalendarStyle(
-                todayDecoration: BoxDecoration(color: const Color(0xFF10A37F).withOpacity(0.4), shape: BoxShape.circle),
+                todayDecoration: BoxDecoration(color: const Color(0xFF10A37F).withValues(alpha: 0.4), shape: BoxShape.circle),
                 selectedDecoration: const BoxDecoration(color: Color(0xFF10A37F), shape: BoxShape.circle),
                 outsideDaysVisible: false,
                 markerDecoration: const BoxDecoration(color: Color(0xFF10A37F), shape: BoxShape.circle),
@@ -236,7 +217,7 @@ class _SharedCommitmentsScreenState extends State<SharedCommitmentsScreen>
           Expanded(
             child: selCommitments.isEmpty
                 ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Icons.event_available_outlined, size: 48, color: Colors.grey.withOpacity(0.3)),
+                    Icon(Icons.event_available_outlined, size: 48, color: Colors.grey.withValues(alpha: 0.3)),
                     const SizedBox(height: 10),
                     Text(
                       profile != null ? 'Nenhum evento publicado neste dia' : 'Nenhum evento neste dia',
@@ -270,19 +251,20 @@ class _SharedCommitmentsScreenState extends State<SharedCommitmentsScreen>
                               const SizedBox(width: 6),
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                                decoration: BoxDecoration(color: const Color(0xFF10A37F).withOpacity(0.2), borderRadius: BorderRadius.circular(4)),
+                                decoration: BoxDecoration(color: const Color(0xFF10A37F).withValues(alpha: 0.2), borderRadius: BorderRadius.circular(4)),
                                 child: const Text('publicado', style: TextStyle(fontSize: 9, color: Color(0xFF10A37F))),
                               ),
                             ]),
                           ]),
                           trailing: isOwner ? IconButton(
-                            icon: Icon(Icons.delete_outline, color: Colors.redAccent.withOpacity(0.7), size: 20),
+                            tooltip: 'Remover publicação',
+                            icon: Icon(Icons.delete_outline, color: Colors.redAccent.withValues(alpha: 0.7), size: 20),
                             onPressed: () => _confirmDelete(context, sharing, item),
                           ) : null,
                         ));
                       } else if (item is Map) {
                         // Evento local (Hive) – só aparece na aba "Minha Agenda"
-                        final colorValue = item['color'] ?? const Color(0xFF10A37F).value;
+                        final colorValue = item['color'] ?? const Color(0xFF10A37F).toARGB32();
                         final hourStr = item['hour'] ?? '';
                         final notesStr = item['notes'] ?? '';
                         return Card(child: ListTile(
@@ -293,10 +275,10 @@ class _SharedCommitmentsScreenState extends State<SharedCommitmentsScreen>
                           ),
                           subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                             if (notesStr.isNotEmpty) Text(notesStr, style: const TextStyle(color: Colors.white70, fontSize: 12)),
-                            Row(children: [
-                              const Icon(Icons.phone_android, size: 12, color: Colors.white38),
-                              const SizedBox(width: 4),
-                              const Text('local', style: TextStyle(fontSize: 11, color: Colors.white38)),
+                            const Row(children: [
+                              Icon(Icons.phone_android, size: 12, color: Colors.white38),
+                              SizedBox(width: 4),
+                              Text('local', style: TextStyle(fontSize: 11, color: Colors.white38)),
                             ]),
                           ]),
                         ));
@@ -315,7 +297,7 @@ class _SharedCommitmentsScreenState extends State<SharedCommitmentsScreen>
   Widget _loginPrompt(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('Agenda Compartilhada')),
     body: Center(child: Padding(padding: const EdgeInsets.all(28), child: Column(mainAxisSize: MainAxisSize.min, children: [
-      Icon(Icons.lock_person_outlined, size: 72, color: Colors.grey.withOpacity(0.4)),
+      Icon(Icons.lock_person_outlined, size: 72, color: Colors.grey.withValues(alpha: 0.4)),
       const SizedBox(height: 20),
       Text('Recurso PRO', style: Theme.of(context).textTheme.titleLarge),
       const SizedBox(height: 10),
@@ -345,7 +327,7 @@ class _SharedCommitmentsScreenState extends State<SharedCommitmentsScreen>
         Container(
           padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 28),
           decoration: BoxDecoration(
-            color: const Color(0xFF10A37F).withOpacity(0.15),
+            color: const Color(0xFF10A37F).withValues(alpha: 0.15),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: const Color(0xFF10A37F), width: 1.5),
           ),
@@ -371,34 +353,35 @@ class _SharedCommitmentsScreenState extends State<SharedCommitmentsScreen>
     ));
   }
 
-  void _showFollowDialog(BuildContext context, SharingService sharing) async {
+  void _showFollowDialog(SharingService sharing) async {
     final ctrl = TextEditingController();
-    final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
-      title: const Text('Seguir Usuário'),
-      content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('Insira o código de 8 caracteres do usuário:', style: TextStyle(color: Colors.grey[400], fontSize: 13)),
-        const SizedBox(height: 12),
-        TextField(
-          controller: ctrl,
-          decoration: const InputDecoration(
-            labelText: 'Código do usuário',
-            hintText: 'Ex: A1B2C3D4',
-            prefixIcon: Icon(Icons.person_search_outlined),
+    try {
+      final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+        title: const Text('Seguir Usuário'),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Insira o código de 8 caracteres do usuário:', style: TextStyle(color: Colors.grey[400], fontSize: 13)),
+          const SizedBox(height: 12),
+          TextField(
+            controller: ctrl,
+            decoration: const InputDecoration(
+              labelText: 'Código do usuário',
+              hintText: 'Ex: A1B2C3D4',
+              prefixIcon: Icon(Icons.person_search_outlined),
+            ),
+            autofocus: true,
+            maxLength: 8,
+            textCapitalization: TextCapitalization.characters,
           ),
-          autofocus: true,
-          maxLength: 8,
-          textCapitalization: TextCapitalization.characters,
-        ),
-      ]),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-        TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Seguir')),
-      ],
-    ));
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Seguir')),
+        ],
+      ));
 
-    if (ok == true && ctrl.text.trim().isNotEmpty && mounted) {
-      final result = await sharing.followByCode(ctrl.text.trim());
-      if (mounted) {
+      if (ok == true && ctrl.text.trim().isNotEmpty && mounted) {
+        final result = await sharing.followByCode(ctrl.text.trim());
+        if (!mounted) return;
         if (result.success) {
           setState(() {}); // rebuild das tabs
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -412,59 +395,66 @@ class _SharedCommitmentsScreenState extends State<SharedCommitmentsScreen>
           ));
         }
       }
+    } finally {
+      ctrl.dispose();
     }
   }
 
-  void _showPublishDialog(BuildContext context, SharingService sharing) async {
+  void _showPublishDialog(SharingService sharing) async {
     final titleCtrl = TextEditingController();
     final hourCtrl = TextEditingController();
     final notesCtrl = TextEditingController();
     Color selectedColor = const Color(0xFF10A37F);
-    final ok = await showDialog<bool>(context: context, builder: (_) => StatefulBuilder(
-      builder: (ctx, setS) => AlertDialog(
-        title: Text('Publicar em ${DateFormat("dd/MM", 'pt_BR').format(_selectedDay)}'),
-        content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Será visível para quem te segue.', style: TextStyle(color: Colors.grey[400], fontSize: 12)),
-          const SizedBox(height: 10),
-          TextField(controller: titleCtrl, decoration: const InputDecoration(labelText: 'Título *'), textCapitalization: TextCapitalization.sentences, maxLength: 50, autofocus: true),
-          const SizedBox(height: 8),
-          TextField(controller: hourCtrl, decoration: const InputDecoration(labelText: 'Horário', hintText: 'Ex: 07:00 - 19:00'), maxLength: 30),
-          const SizedBox(height: 8),
-          TextField(controller: notesCtrl, decoration: const InputDecoration(labelText: 'Observações'), maxLines: 2, maxLength: 100, textCapitalization: TextCapitalization.sentences),
-          const SizedBox(height: 12),
-          Text('Cor:', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          BlockPicker(
-            pickerColor: selectedColor,
-            onColorChanged: (c) => setS(() => selectedColor = c),
-            availableColors: const [
-              Color(0xFF10A37F), Colors.red, Colors.blue, Colors.orange,
-              Colors.purple, Colors.teal, Colors.pink, Colors.indigo, Colors.amber,
-            ],
-          ),
-        ])),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Publicar')),
-        ],
-      ),
-    ));
+    try {
+      final ok = await showDialog<bool>(context: context, builder: (_) => StatefulBuilder(
+        builder: (ctx, setS) => AlertDialog(
+          title: Text('Publicar em ${DateFormat("dd/MM", 'pt_BR').format(_selectedDay)}'),
+          content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Será visível para quem te segue.', style: TextStyle(color: Colors.grey[400], fontSize: 12)),
+            const SizedBox(height: 10),
+            TextField(controller: titleCtrl, decoration: const InputDecoration(labelText: 'Título *'), textCapitalization: TextCapitalization.sentences, maxLength: 50, autofocus: true),
+            const SizedBox(height: 8),
+            TextField(controller: hourCtrl, decoration: const InputDecoration(labelText: 'Horário', hintText: 'Ex: 07:00 - 19:00'), maxLength: 30),
+            const SizedBox(height: 8),
+            TextField(controller: notesCtrl, decoration: const InputDecoration(labelText: 'Observações'), maxLines: 2, maxLength: 100, textCapitalization: TextCapitalization.sentences),
+            const SizedBox(height: 12),
+            Text('Cor:', style: Theme.of(ctx).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            BlockPicker(
+              pickerColor: selectedColor,
+              onColorChanged: (c) => setS(() => selectedColor = c),
+              availableColors: const [
+                Color(0xFF10A37F), Colors.red, Colors.blue, Colors.orange,
+                Colors.purple, Colors.teal, Colors.pink, Colors.indigo, Colors.amber,
+              ],
+            ),
+          ])),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+            TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Publicar')),
+          ],
+        ),
+      ));
 
-    if (ok == true && mounted) {
-      if (titleCtrl.text.trim().isEmpty) return;
-      final added = await sharing.publishCommitment(
-        date: _selectedDay,
-        title: titleCtrl.text.trim(),
-        hour: hourCtrl.text.trim(),
-        notes: notesCtrl.text.trim(),
-        colorValue: selectedColor.value,
-      );
-      if (mounted) {
+      if (ok == true && mounted) {
+        if (titleCtrl.text.trim().isEmpty) return;
+        final added = await sharing.publishCommitment(
+          date: _selectedDay,
+          title: titleCtrl.text.trim(),
+          hour: hourCtrl.text.trim(),
+          notes: notesCtrl.text.trim(),
+          colorValue: selectedColor.toARGB32(),
+        );
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(added ? 'Publicado com sucesso!' : 'Erro ao publicar.'),
           backgroundColor: added ? Colors.green : Colors.red,
         ));
       }
+    } finally {
+      titleCtrl.dispose();
+      hourCtrl.dispose();
+      notesCtrl.dispose();
     }
   }
 

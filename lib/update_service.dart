@@ -25,17 +25,22 @@ class UpdateInfo {
 }
 
 class UpdateService {
-  final String _versionCheckUrl = "https://gist.githubusercontent.com/davidmp24/3bfcf2fd1b620b6a4b8b4994dcc4ee1c/raw/b75de313b5fc08e48503b44bb1a5e70a1be28378/gistfile1.txt";
+  final String _versionCheckUrl = "https://raw.githubusercontent.com/davidmp24/Plantao-Operacional/main/versao_app.json";
 
   final ValueNotifier<bool> isDownloading = ValueNotifier(false);
   final ValueNotifier<double> downloadProgress = ValueNotifier(0.0);
 
-  Future<UpdateInfo?> checkForUpdate() async {
+  Future<UpdateInfo?> checkForUpdate({bool silent = true}) async {
     try {
       PackageInfo packageInfo = await PackageInfo.fromPlatform();
       int currentVersionCode = int.tryParse(packageInfo.buildNumber) ?? 0;
 
-      final response = await http.get(Uri.parse(_versionCheckUrl)).timeout(const Duration(seconds: 10));
+      final response = await http
+          .get(
+            Uri.parse(_versionCheckUrl),
+            headers: const {'User-Agent': 'PlantaoOperacional/2.3.0'},
+          )
+          .timeout(const Duration(seconds: 5));
 
       if (response.statusCode == 200) {
         final Map<String, dynamic> versionData = jsonDecode(response.body);
@@ -52,8 +57,9 @@ class UpdateService {
       }
       return null;
     } catch (e) {
-      print("Erro ao verificar atualização: $e");
-      return null; // Não propaga o erro — rede pode falhar no startup
+      debugPrint("Erro ao verificar atualização (offline/VPN): $e");
+      if (!silent) rethrow;
+      return null; // Não propaga o erro no startup — rede pode falhar sob VPN/offline
     }
   }
 
@@ -159,7 +165,7 @@ class UpdateService {
         await OpenFilex.open(filePath, type: "application/vnd.android.package-archive");
       } catch (e) {
         isDownloading.value = false;
-        print("Erro no download/instalação: $e");
+        debugPrint("Erro no download/instalação: $e");
         if(context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro no download: $e'), backgroundColor: Colors.red));
         }

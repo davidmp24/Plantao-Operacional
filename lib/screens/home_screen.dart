@@ -33,7 +33,7 @@ class _HomeScreenState extends State<HomeScreen> {
         selectedIndex: _currentIndex,
         onDestinationSelected: (i) => setState(() => _currentIndex = i),
         backgroundColor: const Color(0xFF262626),
-        indicatorColor: const Color(0xFF10A37F).withOpacity(0.3),
+        indicatorColor: const Color(0xFF10A37F).withValues(alpha: 0.3),
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
         destinations: const [
           NavigationDestination(

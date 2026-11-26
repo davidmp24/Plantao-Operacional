@@ -23,7 +23,7 @@ if (keystorePropertiesFile.exists()) {
 android {
     namespace = "com.davidmp.plantao"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = "27.0.12077973" // <<< NDK ATUALIZADO AQUI
+    ndkVersion = "28.2.13676358" // NDK instalado no ambiente
 
     compileOptions {
         isCoreLibraryDesugaringEnabled = true
@@ -37,7 +37,7 @@ android {
 
     defaultConfig {
         applicationId = "com.davidmp.plantao"
-        minSdk = 23
+        minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName

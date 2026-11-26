@@ -30,15 +30,15 @@ class LoginScreen extends StatelessWidget {
                     width: 120,
                     height: 120,
                     decoration: BoxDecoration(
-                      color: const Color(0xFF10A37F).withOpacity(0.15),
+                      color: const Color(0xFF10A37F).withValues(alpha: 0.15),
                       shape: BoxShape.circle,
                       border: Border.all(
-                        color: const Color(0xFF10A37F).withOpacity(0.4),
+                        color: const Color(0xFF10A37F).withValues(alpha: 0.4),
                         width: 2,
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: const Color(0xFF10A37F).withOpacity(0.3),
+                          color: const Color(0xFF10A37F).withValues(alpha: 0.3),
                           blurRadius: 30,
                           spreadRadius: 5,
                         )
@@ -65,10 +65,10 @@ class LoginScreen extends StatelessWidget {
                     padding:
                         const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF10A37F).withOpacity(0.2),
+                      color: const Color(0xFF10A37F).withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
-                        color: const Color(0xFF10A37F).withOpacity(0.5),
+                        color: const Color(0xFF10A37F).withValues(alpha: 0.5),
                       ),
                     ),
                     child: const Text(
@@ -85,7 +85,7 @@ class LoginScreen extends StatelessWidget {
                   Text(
                     'Agenda inteligente para equipes e famílias',
                     style: TextStyle(
-                      color: Colors.white.withOpacity(0.7),
+                      color: Colors.white.withValues(alpha: 0.7),
                       fontSize: 14,
                     ),
                     textAlign: TextAlign.center,
@@ -93,28 +93,28 @@ class LoginScreen extends StatelessWidget {
                   const SizedBox(height: 48),
 
                   // Features
-                  _FeaturePill(
+                  const _FeaturePill(
                     icon: Icons.share_outlined,
                     label: 'Compromissos Compartilhados',
-                    color: const Color(0xFF10A37F),
+                    color: Color(0xFF10A37F),
                   ),
                   const SizedBox(height: 12),
-                  _FeaturePill(
+                  const _FeaturePill(
                     icon: Icons.auto_fix_high_rounded,
                     label: 'Gerador de Escala Automática',
-                    color: const Color(0xFF3949AB),
+                    color: Color(0xFF3949AB),
                   ),
                   const SizedBox(height: 12),
-                  _FeaturePill(
+                  const _FeaturePill(
                     icon: Icons.calendar_today_rounded,
                     label: 'Google Calendar Integrado',
-                    color: const Color(0xFFE53935),
+                    color: Color(0xFFE53935),
                   ),
                   const SizedBox(height: 12),
-                  _FeaturePill(
+                  const _FeaturePill(
                     icon: Icons.sync_rounded,
                     label: 'Sincronização em Tempo Real',
-                    color: const Color(0xFFF57F17),
+                    color: Color(0xFFF57F17),
                   ),
                   const SizedBox(height: 48),
 
@@ -143,15 +143,25 @@ class LoginScreen extends StatelessWidget {
                               style: TextStyle(
                                   fontSize: 16, fontWeight: FontWeight.w600),
                             ),
-                            onPressed: () =>
-                                context.read<AuthService>().signIn(),
+                            onPressed: () async {
+                              final authService = context.read<AuthService>();
+                              await authService.signIn();
+                              if (context.mounted && authService.errorMessage != null) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(authService.errorMessage!),
+                                    backgroundColor: Colors.redAccent,
+                                  ),
+                                );
+                              }
+                            },
                           ),
                   ),
                   const SizedBox(height: 16),
                   Text(
                     'Dados sincronizados de forma segura com Firebase',
                     style: TextStyle(
-                      color: Colors.white.withOpacity(0.5),
+                      color: Colors.white.withValues(alpha: 0.5),
                       fontSize: 12,
                     ),
                     textAlign: TextAlign.center,
@@ -182,16 +192,16 @@ class _FeaturePill extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
+        color: color.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.25)),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
       ),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
-              color: color.withOpacity(0.15),
+              color: color.withValues(alpha: 0.15),
               shape: BoxShape.circle,
             ),
             child: Icon(icon, color: color, size: 18),
@@ -200,7 +210,7 @@ class _FeaturePill extends StatelessWidget {
           Text(
             label,
             style: TextStyle(
-              color: Colors.white.withOpacity(0.85),
+              color: Colors.white.withValues(alpha: 0.85),
               fontSize: 14,
               fontWeight: FontWeight.w500,
             ),
